@@ -212,43 +212,92 @@ private extension UsageService {
         return best;
       }
 
+      function extractResetTextFromLines(lines) {
+        for (const line of lines) {
+          const cleaned = line.replace(/^[•\\-]\\s*/, '');
+          const match = cleaned.match(/^(?:next\\s+)?resets?\\b\\s*:?\\s*(.*)/i);
+          if (match) {
+            const value = (match[1] || '').trim();
+            if (value) {
+              return value;
+            }
+          }
+        }
+        return '';
+      }
+
       function extract(labelVariants, otherLabels) {
         for (const label of labelVariants) {
+          const labelLower = label.toLowerCase();
           const cardText = findCardText(label, otherLabels);
           if (!cardText) continue;
           const labelRegex = new RegExp(escapeRegExp(label) + \"[\\\\s\\\\S]*?(\\\\d+)\\\\s*%\\\\s*remaining\", \"i\");
           const percentMatch = cardText.match(labelRegex) || cardText.match(/(\\\\d+)\\\\s*%/);
-          const resetMatch = cardText.match(/Resets\\\\s+([^\\\\n]+)/i);
+          let resetText = '';
+          const lines = cardText.split(/\\n+/).map(line => line.trim()).filter(Boolean);
+          resetText = extractResetTextFromLines(lines);
+          if (!resetText) {
+            const resetMatch = cardText.match(/(?:next\\\\s+)?resets?\\\\b\\\\s*:?\\\\s*([^\\\\n]+)/i);
+            resetText = resetMatch ? resetMatch[1].trim() : '';
+          }
+          if (!resetText) {
+            const fallbackLine = lines.find(line => {
+              const lowerLine = line.toLowerCase();
+              if (lowerLine.includes(labelLower)) return false;
+              if (/\\d+\\s*%/.test(lowerLine)) return false;
+              if (lowerLine.includes('remaining')) return false;
+              return true;
+            });
+            resetText = fallbackLine ? fallbackLine.trim() : '';
+          }
           if (percentMatch) {
             return {
               percentRemaining: parseInt(percentMatch[1], 10),
-              resetText: resetMatch ? resetMatch[1].trim() : ''
+              resetText
             };
           }
         }
         return null;
       }
 
-      function extractByLines(text, labelVariants) {
+      function extractByLines(text, labelVariants, otherLabels) {
         const lines = text.split(/\\n+/).map(line => line.trim()).filter(Boolean);
+        const otherLabelLowers = otherLabels.map(label => label.toLowerCase());
         for (const label of labelVariants) {
           const labelLower = label.toLowerCase();
           for (let i = 0; i < lines.length; i++) {
             if (!lines[i].toLowerCase().includes(labelLower)) continue;
             let percentLine = null;
+            let percentIndex = null;
             let resetLine = null;
             for (let j = i + 1; j < Math.min(lines.length, i + 10); j++) {
+              const lowerLine = lines[j].toLowerCase();
+              if (otherLabelLowers.some(other => lowerLine.includes(other))) {
+                break;
+              }
               if (!percentLine && /\\d+\\s*%/.test(lines[j])) {
                 percentLine = lines[j];
+                percentIndex = j;
               }
-              if (!resetLine && /^resets\\b/i.test(lines[j])) {
+              if (!resetLine && /\\breset(s)?\\b/i.test(lines[j])) {
                 resetLine = lines[j];
+              }
+              if (!resetLine && percentIndex != null && j > percentIndex) {
+                if (!/\\d+\\s*%/.test(lines[j]) && !lowerLine.includes('remaining')) {
+                  resetLine = lines[j];
+                }
               }
             }
             if (percentLine) {
               const percentMatch = percentLine.match(/(\\d+)\\s*%/);
               if (percentMatch) {
-                const resetText = resetLine ? resetLine.replace(/^Resets\\s*/i, '').trim() : '';
+                let resetText = '';
+                if (resetLine) {
+                  resetText = extractResetTextFromLines([resetLine]);
+                  if (!resetText) {
+                    resetText = resetLine.replace(/^(?:next\\s+)?resets?\\s*:?\\s*/i, '').trim();
+                  }
+                }
                 return { percentRemaining: parseInt(percentMatch[1], 10), resetText };
               }
             }
@@ -264,8 +313,8 @@ private extension UsageService {
       const weekly = extract(weeklyLabels, fiveHourLabels);
 
       const bodyText = document.body ? (document.body.innerText || '') : '';
-      const fiveHourFallback = fiveHour || extractByLines(bodyText, fiveHourLabels);
-      const weeklyFallback = weekly || extractByLines(bodyText, weeklyLabels);
+      const fiveHourFallback = fiveHour || extractByLines(bodyText, fiveHourLabels, weeklyLabels);
+      const weeklyFallback = weekly || extractByLines(bodyText, weeklyLabels, fiveHourLabels);
 
       const hasUsage = !!(fiveHourFallback || weeklyFallback);
       let authHint = null;

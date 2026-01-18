@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Foundation
 
 struct PopoverView: View {
     @ObservedObject var usageService: UsageService
@@ -18,19 +19,22 @@ struct PopoverView: View {
 
             VStack(alignment: .leading, spacing: 16) {
                 header
+                    .layoutPriority(1)
                 content
                 settingsSection
                 footer
             }
             .padding(18)
+            .padding(.top, 6)
+            .padding(.bottom, 10)
         }
-        .frame(width: 340, height: 320)
+        .frame(width: 340, height: 368)
     }
 
     private var header: some View {
         HStack {
-            Text("Codex Usage")
-                .font(.system(size: 16, weight: .semibold))
+            Text("Codex")
+                .font(.system(size: 17, weight: .semibold))
             Spacer()
             Button(action: onRefresh) {
                 Image(systemName: "arrow.clockwise")
@@ -69,8 +73,8 @@ struct PopoverView: View {
             }
         } else {
             VStack(spacing: 12) {
-                UsageCard(title: "5 hour usage limit", limit: usageService.fiveHourLimit, showTitle: true)
-                UsageCard(title: "Weekly usage limit", limit: usageService.weeklyLimit, showTitle: true)
+                UsageCard(title: "5 hour limit", limit: usageService.fiveHourLimit, showTitle: true)
+                UsageCard(title: "Weekly limit", limit: usageService.weeklyLimit, showTitle: true)
             }
         }
     }
@@ -80,24 +84,6 @@ struct PopoverView: View {
             Toggle("Launch at login", isOn: $settings.launchAtLogin)
                 .toggleStyle(.switch)
                 .disabled(!settings.canRegisterLoginItem)
-            if !settings.canRegisterLoginItem {
-                Text("Launch at login requires a bundled app in /Applications.")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-            } else if let message = settings.loginItemMessage {
-                Text(message)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-            }
-
-            Toggle("Low usage notifications", isOn: $settings.notificationsEnabled)
-                .toggleStyle(.switch)
-                .disabled(!NotificationManager.isSupported)
-            if let message = settings.notificationsMessage {
-                Text(message)
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-            }
         }
     }
 
@@ -172,7 +158,201 @@ private struct UsageCard: View {
 
     private var resetText: String {
         guard let limit, !limit.resetText.isEmpty else { return "Reset time unavailable" }
-        return "Resets \(limit.resetText)"
+        guard let countdown = ResetCountdownFormatter.countdown(from: limit.resetText) else {
+            return "Reset time unavailable"
+        }
+        return "Resets in \(countdown)"
+    }
+}
+
+private enum ResetCountdownFormatter {
+    static func countdown(from resetText: String, now: Date = Date(), calendar: Calendar = .current) -> String? {
+        let trimmed = resetText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let interval = parseInterval(from: trimmed, now: now, calendar: calendar) {
+            return format(interval: interval)
+        }
+        return nil
+    }
+
+    private static func parseInterval(from text: String, now: Date, calendar: Calendar) -> TimeInterval? {
+        if let relative = parseRelativeInterval(from: text, now: now, calendar: calendar) {
+            return relative
+        }
+        if let absoluteDate = parseAbsoluteDate(from: text, now: now, calendar: calendar) {
+            return absoluteDate.timeIntervalSince(now)
+        }
+        if let timeOnlyDate = parseTimeOnlyDate(from: text, now: now, calendar: calendar) {
+            return timeOnlyDate.timeIntervalSince(now)
+        }
+        return nil
+    }
+
+    private static func parseRelativeInterval(from text: String, now: Date, calendar: Calendar) -> TimeInterval? {
+        let lower = text.lowercased()
+        if lower.contains("tomorrow") {
+            if let target = parseDayKeyword("tomorrow", from: lower, now: now, calendar: calendar) {
+                return target.timeIntervalSince(now)
+            }
+        }
+        if lower.contains("today") {
+            if let target = parseDayKeyword("today", from: lower, now: now, calendar: calendar) {
+                return target.timeIntervalSince(now)
+            }
+        }
+
+        let pattern = "(\\d+)\\s*(weeks?|w|days?|d|hours?|hrs?|hr|h|minutes?|mins?|min|m)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        let matches = regex.matches(in: lower, range: NSRange(lower.startIndex..., in: lower))
+        if matches.isEmpty { return nil }
+
+        var seconds: TimeInterval = 0
+        for match in matches {
+            guard match.numberOfRanges >= 3,
+                  let valueRange = Range(match.range(at: 1), in: lower),
+                  let unitRange = Range(match.range(at: 2), in: lower)
+            else { continue }
+
+            let value = Double(lower[valueRange]) ?? 0
+            let unit = String(lower[unitRange])
+            switch unit {
+            case "week", "weeks", "w":
+                seconds += value * 7 * 24 * 3600
+            case "day", "days", "d":
+                seconds += value * 24 * 3600
+            case "hour", "hours", "hr", "hrs", "h":
+                seconds += value * 3600
+            case "minute", "minutes", "min", "mins", "m":
+                seconds += value * 60
+            default:
+                break
+            }
+        }
+
+        return seconds > 0 ? seconds : nil
+    }
+
+    private static func parseDayKeyword(_ keyword: String, from text: String, now: Date, calendar: Calendar) -> Date? {
+        let baseDate: Date
+        switch keyword {
+        case "tomorrow":
+            baseDate = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        case "today":
+            baseDate = now
+        default:
+            baseDate = now
+        }
+
+        if let time = parseTimeComponents(from: text) {
+            var components = calendar.dateComponents([.year, .month, .day], from: baseDate)
+            components.hour = time.hour
+            components.minute = time.minute
+            return calendar.date(from: components)
+        }
+
+        return calendar.startOfDay(for: baseDate)
+    }
+
+    private static func parseAbsoluteDate(from text: String, now: Date, calendar: Calendar) -> Date? {
+        let formats = [
+            "MMM d, yyyy 'at' h:mm a",
+            "MMMM d, yyyy 'at' h:mm a",
+            "MMM d, yyyy h:mm a",
+            "MMMM d, yyyy h:mm a",
+            "MMM d, yyyy",
+            "MMMM d, yyyy",
+            "MMM d 'at' h:mm a",
+            "MMMM d 'at' h:mm a",
+            "MMM d",
+            "MMMM d"
+        ]
+
+        let locale = Locale(identifier: "en_US_POSIX")
+        let timeZone = TimeZone.current
+
+        for format in formats {
+            let formatter = DateFormatter()
+            formatter.locale = locale
+            formatter.timeZone = timeZone
+            formatter.dateFormat = format
+            guard let parsed = formatter.date(from: text) else { continue }
+
+            var date = parsed
+            if !format.contains("y") {
+                var components = calendar.dateComponents(in: timeZone, from: parsed)
+                components.year = calendar.component(.year, from: now)
+                if let adjusted = calendar.date(from: components) {
+                    date = adjusted
+                }
+            }
+
+            if date <= now {
+                if let advanced = calendar.date(byAdding: .year, value: 1, to: date) {
+                    date = advanced
+                }
+            }
+
+            return date
+        }
+
+        return nil
+    }
+
+    private static func parseTimeOnlyDate(from text: String, now: Date, calendar: Calendar) -> Date? {
+        guard let time = parseTimeComponents(from: text) else { return nil }
+        var components = calendar.dateComponents([.year, .month, .day], from: now)
+        components.hour = time.hour
+        components.minute = time.minute
+        guard let candidate = calendar.date(from: components) else { return nil }
+        if candidate <= now {
+            return calendar.date(byAdding: .day, value: 1, to: candidate)
+        }
+        return candidate
+    }
+
+    private static func parseTimeComponents(from text: String) -> DateComponents? {
+        let pattern = "(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        guard let match = regex.firstMatch(in: text.lowercased(), range: NSRange(text.startIndex..., in: text)) else {
+            return nil
+        }
+
+        guard let hourRange = Range(match.range(at: 1), in: text),
+              let periodRange = Range(match.range(at: 3), in: text)
+        else {
+            return nil
+        }
+
+        let minute: Int
+        if let minuteRange = Range(match.range(at: 2), in: text) {
+            minute = Int(text[minuteRange]) ?? 0
+        } else {
+            minute = 0
+        }
+
+        var hour = Int(text[hourRange]) ?? 0
+        let period = text[periodRange].lowercased()
+        if period == "pm" && hour < 12 { hour += 12 }
+        if period == "am" && hour == 12 { hour = 0 }
+
+        return DateComponents(hour: hour, minute: minute)
+    }
+
+    private static func format(interval: TimeInterval) -> String {
+        let totalSeconds = max(0, Int(interval.rounded(.up)))
+        let totalMinutes = max(1, totalSeconds / 60)
+        let days = totalMinutes / (24 * 60)
+        let hours = (totalMinutes / 60) % 24
+        let minutes = totalMinutes % 60
+
+        if days > 0 {
+            return hours > 0 ? "\(days)d \(hours)h" : "\(days)d"
+        }
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        }
+        return "\(minutes)m"
     }
 }
 

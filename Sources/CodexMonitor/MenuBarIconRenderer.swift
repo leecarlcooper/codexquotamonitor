@@ -2,16 +2,17 @@ import Cocoa
 
 enum MenuBarIconRenderer {
     static func render(fiveHourPercent: Int?, weeklyPercent: Int?, signedIn: Bool) -> NSImage {
-        let size = NSSize(width: 26, height: 14)
+        let size = NSSize(width: 26, height: 18)
         let image = NSImage(size: size)
         image.lockFocus()
 
-        let barHeight: CGFloat = 4
+        let barHeight: CGFloat = 5
         let spacing: CGFloat = 3
         let fullWidth: CGFloat = size.width
-
-        let topY = size.height - barHeight
-        let bottomY = topY - barHeight - spacing
+        let totalHeight = (barHeight * 2) + spacing
+        let startY = max(0, (size.height - totalHeight) / 2)
+        let bottomY = startY
+        let topY = startY + barHeight + spacing
 
         drawBar(y: topY, width: fullWidth, height: barHeight, percent: fiveHourPercent, signedIn: signedIn)
         drawBar(y: bottomY, width: fullWidth, height: barHeight, percent: weeklyPercent, signedIn: signedIn)

@@ -19,7 +19,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventMonitor: EventMonitor?
     private let usageService = UsageService()
     private let settingsStore = SettingsStore()
-    private let alertCoordinator = UsageAlertCoordinator()
     private var cancellables: Set<AnyCancellable> = []
     private var loginWindowController: LoginWindowController?
 
@@ -44,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupPopover() {
         popover.behavior = .transient
         popover.animates = true
-        popover.contentSize = NSSize(width: 340, height: 320)
+        popover.contentSize = NSSize(width: 340, height: 368)
 
         let view = PopoverView(
             usageService: usageService,
@@ -76,9 +75,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     signedIn: signedIn
                 )
                 self.statusItem.button?.toolTip = self.usageService.statusSummary
-                if self.settingsStore.notificationsEnabled {
-                    self.alertCoordinator.handle(fiveHour: five, weekly: weekly)
-                }
             }
             .store(in: &cancellables)
     }

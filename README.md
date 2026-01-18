@@ -1,6 +1,6 @@
 # CodexMonitor (macOS menu bar)
 
-A lightweight menu bar app that polls the Codex usage page every 5 minutes and shows remaining 5‑hour and weekly limits.
+A lightweight menu bar app that polls the Codex usage page every 5 minutes and shows remaining 5‑hour and weekly limits with a reset countdown.
 
 ## Run (local)
 
@@ -31,6 +31,7 @@ Click **Open Sign In** in the popover to log in via the embedded browser window.
 - Data source: `https://chatgpt.com/codex/settings/usage`
 - Polling interval: 5 minutes
 - Menu bar icon shows two stacked bars (5‑hour on top, weekly on bottom) with green/yellow/red warnings based on remaining %
-- Optional: enable launch-at-login and low-usage notifications from the popover (requires running as a bundled app in /Applications)
+- Usage cards show the percent remaining plus a “Resets in …” countdown parsed from the usage dashboard
+- Optional: enable launch-at-login from the popover (requires running as a bundled app in /Applications)
 
 If the page’s DOM changes, update the JS parser in `Sources/CodexMonitor/UsageService.swift`.
