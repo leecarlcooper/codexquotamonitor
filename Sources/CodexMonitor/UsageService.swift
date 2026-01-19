@@ -85,8 +85,7 @@ final class UsageService: NSObject, ObservableObject {
     private func handleParseResult(_ result: Any?) {
         defer { isLoading = false }
         guard let jsonString = result as? String, let data = jsonString.data(using: .utf8) else {
-            authState = .needsLogin
-            errorMessage = "Unable to parse usage"
+            recordTransientError("Unable to parse usage")
             return
         }
 
@@ -131,21 +130,27 @@ final class UsageService: NSObject, ObservableObject {
                 }
             }
         } catch {
-            authState = .needsLogin
-            errorMessage = "Failed to decode usage"
+            recordTransientError("Failed to decode usage")
         }
     }
 
     private func attemptParse() {
         webView.evaluateJavaScript(Self.parserScript) { [weak self] result, error in
             if let error {
-                self?.errorMessage = error.localizedDescription
-                self?.authState = .needsLogin
+                self?.recordTransientError(error.localizedDescription)
                 self?.isLoading = false
                 return
             }
             self?.handleParseResult(result)
         }
+    }
+
+    private func recordTransientError(_ message: String) {
+        errorMessage = message
+        if authState == .authenticated || authState == .needsLogin {
+            return
+        }
+        authState = .unknown
     }
 }
 

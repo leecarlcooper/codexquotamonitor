@@ -52,14 +52,6 @@ enum MenuBarIconRenderer {
     }
 
     private static func color(for percent: Int?) -> NSColor {
-        guard let percent else { return NSColor.secondaryLabelColor }
-        switch percent {
-        case 0..<25:
-            return NSColor.systemRed
-        case 25..<55:
-            return NSColor.systemYellow
-        default:
-            return NSColor(calibratedRed: 0.19, green: 0.78, blue: 0.40, alpha: 1.0)
-        }
+        UsageBarStyle.appKitColor(for: percent)
     }
 }

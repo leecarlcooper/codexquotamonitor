@@ -30,8 +30,9 @@ Click **Open Sign In** in the popover to log in via the embedded browser window.
 
 - Data source: `https://chatgpt.com/codex/settings/usage`
 - Polling interval: 5 minutes
-- Menu bar icon shows two stacked bars (5‑hour on top, weekly on bottom) with green/yellow/red warnings based on remaining %
+- Menu bar icon shows two stacked bars (5‑hour on top, weekly on bottom) with green/yellow/red warnings based on remaining % (green ≥26%, yellow 15–25%, red <15%)
 - Usage cards show the percent remaining plus a “Resets in …” countdown parsed from the usage dashboard
+- Popover usage bars use the same color thresholds as the menu bar icon via `UsageBarStyle`
 - Optional: enable launch-at-login from the popover (requires running as a bundled app in /Applications)
 
 If the page’s DOM changes, update the JS parser in `Sources/CodexMonitor/UsageService.swift`.

@@ -73,8 +73,18 @@ struct PopoverView: View {
             }
         } else {
             VStack(spacing: 12) {
-                UsageCard(title: "5 hour limit", limit: usageService.fiveHourLimit, showTitle: true)
-                UsageCard(title: "Weekly limit", limit: usageService.weeklyLimit, showTitle: true)
+                UsageCard(
+                    title: "5 hour limit",
+                    limit: usageService.fiveHourLimit,
+                    referenceDate: usageService.lastUpdated,
+                    showTitle: true
+                )
+                UsageCard(
+                    title: "Weekly limit",
+                    limit: usageService.weeklyLimit,
+                    referenceDate: usageService.lastUpdated,
+                    showTitle: true
+                )
             }
         }
     }
@@ -120,9 +130,33 @@ struct PopoverView: View {
 private struct UsageCard: View {
     let title: String
     let limit: UsageLimit?
+    let referenceDate: Date?
     let showTitle: Bool
 
     var body: some View {
+        TimelineView(.periodic(from: Date(), by: 60)) { context in
+            cardBody(now: context.date)
+        }
+    }
+
+    private var percentText: String {
+        guard let percent = limit?.percentRemaining else { return "--%" }
+        return "\(percent)%"
+    }
+
+    private func resetText(now: Date) -> String {
+        guard let limit, !limit.resetText.isEmpty else { return "Reset time unavailable" }
+        guard let countdown = ResetCountdownFormatter.countdown(
+            from: limit.resetText,
+            now: now,
+            referenceDate: referenceDate
+        ) else {
+            return "Reset time unavailable"
+        }
+        return "Resets in \(countdown)"
+    }
+
+    private func cardBody(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if showTitle {
                 Text(title)
@@ -142,7 +176,7 @@ private struct UsageCard: View {
             UsageBar(percent: limit?.percentRemaining)
                 .frame(height: 10)
 
-            Text(resetText)
+            Text(resetText(now: now))
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
         }
@@ -150,35 +184,35 @@ private struct UsageCard: View {
         .background(Color.black.opacity(0.12))
         .cornerRadius(12)
     }
-
-    private var percentText: String {
-        guard let percent = limit?.percentRemaining else { return "--%" }
-        return "\(percent)%"
-    }
-
-    private var resetText: String {
-        guard let limit, !limit.resetText.isEmpty else { return "Reset time unavailable" }
-        guard let countdown = ResetCountdownFormatter.countdown(from: limit.resetText) else {
-            return "Reset time unavailable"
-        }
-        return "Resets in \(countdown)"
-    }
 }
 
 private enum ResetCountdownFormatter {
-    static func countdown(from resetText: String, now: Date = Date(), calendar: Calendar = .current) -> String? {
+    static func countdown(
+        from resetText: String,
+        now: Date = Date(),
+        referenceDate: Date? = nil,
+        calendar: Calendar = .current
+    ) -> String? {
         let trimmed = resetText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        if let interval = parseInterval(from: trimmed, now: now, calendar: calendar) {
+        if let interval = parseInterval(from: trimmed, now: now, referenceDate: referenceDate, calendar: calendar) {
             return format(interval: interval)
         }
         return nil
     }
 
-    private static func parseInterval(from text: String, now: Date, calendar: Calendar) -> TimeInterval? {
+    private static func parseInterval(
+        from text: String,
+        now: Date,
+        referenceDate: Date?,
+        calendar: Calendar
+    ) -> TimeInterval? {
         if let relative = parseRelativeInterval(from: text, now: now, calendar: calendar) {
-            return relative
+            if relative.isAnchored, let referenceDate {
+                return referenceDate.addingTimeInterval(relative.interval).timeIntervalSince(now)
+            }
+            return relative.interval
         }
         if let absoluteDate = parseAbsoluteDate(from: text, now: now, calendar: calendar) {
             return absoluteDate.timeIntervalSince(now)
@@ -189,16 +223,20 @@ private enum ResetCountdownFormatter {
         return nil
     }
 
-    private static func parseRelativeInterval(from text: String, now: Date, calendar: Calendar) -> TimeInterval? {
+    private static func parseRelativeInterval(
+        from text: String,
+        now: Date,
+        calendar: Calendar
+    ) -> (interval: TimeInterval, isAnchored: Bool)? {
         let lower = text.lowercased()
         if lower.contains("tomorrow") {
             if let target = parseDayKeyword("tomorrow", from: lower, now: now, calendar: calendar) {
-                return target.timeIntervalSince(now)
+                return (target.timeIntervalSince(now), false)
             }
         }
         if lower.contains("today") {
             if let target = parseDayKeyword("today", from: lower, now: now, calendar: calendar) {
-                return target.timeIntervalSince(now)
+                return (target.timeIntervalSince(now), false)
             }
         }
 
@@ -230,7 +268,10 @@ private enum ResetCountdownFormatter {
             }
         }
 
-        return seconds > 0 ? seconds : nil
+        if seconds > 0 {
+            return (seconds, true)
+        }
+        return nil
     }
 
     private static func parseDayKeyword(_ keyword: String, from text: String, now: Date, calendar: Calendar) -> Date? {
@@ -364,12 +405,7 @@ private struct UsageBar: View {
     }
 
     private var barColor: Color {
-        guard let percent else { return .gray }
-        switch percent {
-        case 0..<25: return .red
-        case 25..<55: return .yellow
-        default: return .green
-        }
+        UsageBarStyle.swiftUIColor(for: percent)
     }
 
     var body: some View {
