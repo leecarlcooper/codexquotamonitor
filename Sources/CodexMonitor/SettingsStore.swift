@@ -18,8 +18,17 @@ final class SettingsStore: ObservableObject {
     let canRegisterLoginItem: Bool
 
     init() {
-        self.canRegisterLoginItem = LoginItemManager.canRegisterLoginItem
-        self.launchAtLogin = UserDefaults.standard.bool(forKey: Keys.launchAtLogin)
+        let canRegister = LoginItemManager.canRegisterLoginItem
+        self.canRegisterLoginItem = canRegister
+
+        let defaults = UserDefaults.standard
+        if let stored = defaults.object(forKey: Keys.launchAtLogin) as? Bool {
+            self.launchAtLogin = stored
+        } else {
+            let shouldEnable = canRegister
+            self.launchAtLogin = shouldEnable
+            defaults.set(shouldEnable, forKey: Keys.launchAtLogin)
+        }
     }
 
     func applyStartup() {
