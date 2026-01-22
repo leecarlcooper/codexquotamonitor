@@ -21,6 +21,7 @@ struct PopoverView: View {
                 header
                     .layoutPriority(1)
                 content
+                settingsSeparator
                 settingsSection
                 footer
             }
@@ -95,6 +96,11 @@ struct PopoverView: View {
                 .toggleStyle(.switch)
                 .disabled(!settings.canRegisterLoginItem)
         }
+    }
+
+    private var settingsSeparator: some View {
+        Divider()
+            .opacity(0.5)
     }
 
     private var footer: some View {

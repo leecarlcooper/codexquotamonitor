@@ -2,6 +2,11 @@
 
 A lightweight menu bar app that polls the Codex usage page every 5 minutes and shows remaining 5‑hour and weekly limits with a reset countdown.
 
+## Requirements
+
+- macOS 13+
+- Swift 5.9 (Xcode 15+)
+
 ## Run (local)
 
 ```bash

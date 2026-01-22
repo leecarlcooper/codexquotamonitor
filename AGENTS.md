@@ -28,4 +28,5 @@
 
 ## Configuration & Maintenance Notes
 - The app scrapes `https://chatgpt.com/codex/settings/usage`; if the DOM changes, update the parsing logic in `Sources/CodexMonitor/UsageService.swift`.
+- Minimum deployment target is macOS 13 (set in `Package.swift`).
 - Avoid committing credentials or session data; authentication is handled via WebKit’s data store at runtime.
