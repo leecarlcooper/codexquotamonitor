@@ -17,17 +17,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private var eventMonitor: EventMonitor?
-    private let usageService = UsageService()
+    private let codexUsageService = UsageService(configuration: .codex)
+    private let claudeUsageService = UsageService(configuration: .claude)
     private let settingsStore = SettingsStore()
     private var cancellables: Set<AnyCancellable> = []
-    private var loginWindowController: LoginWindowController?
+    private var codexLoginWindowController: LoginWindowController?
+    private var claudeLoginWindowController: LoginWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
         setupPopover()
         bindUsageUpdates()
         settingsStore.applyStartup()
-        usageService.startPolling()
+        codexUsageService.startPolling()
+        claudeUsageService.startPolling()
     }
 
     private func setupStatusItem() {
@@ -43,13 +46,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupPopover() {
         popover.behavior = .transient
         popover.animates = true
-        popover.contentSize = NSSize(width: 340, height: 368)
+        popover.contentSize = NSSize(width: 340, height: 700)
 
         let view = PopoverView(
-            usageService: usageService,
+            usageService: codexUsageService,
+            claudeUsageService: claudeUsageService,
             settings: settingsStore,
-            onSignIn: { [weak self] in self?.showLoginWindow() },
-            onRefresh: { [weak self] in self?.usageService.refresh(force: true) }
+            onSignIn: { [weak self] in self?.showCodexLoginWindow() },
+            onClaudeSignIn: { [weak self] in self?.showClaudeLoginWindow() },
+            onRefresh: { [weak self] in
+                self?.codexUsageService.refresh(force: true)
+                self?.claudeUsageService.refresh(force: true)
+            }
         )
         popover.contentViewController = NSHostingController(rootView: view)
 
@@ -61,20 +69,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func bindUsageUpdates() {
-        usageService.$fiveHourLimit
-            .combineLatest(usageService.$weeklyLimit)
+        let codexPublisher = codexUsageService.$fiveHourLimit
+            .combineLatest(codexUsageService.$weeklyLimit, codexUsageService.$authState)
+        let claudePublisher = claudeUsageService.$fiveHourLimit
+            .combineLatest(claudeUsageService.$weeklyLimit, claudeUsageService.$authState)
+
+        settingsStore.$selectedUsageSource
+            .combineLatest(codexPublisher, claudePublisher)
             .receive(on: RunLoop.main)
-            .sink { [weak self] five, weekly in
+            .sink { [weak self] selection, codex, claude in
                 guard let self else { return }
-                let fivePercent = five?.percentRemaining
-                let weeklyPercent = weekly?.percentRemaining
-                let signedIn = self.usageService.authState == .authenticated
-                self.statusItem.button?.image = MenuBarIconRenderer.render(
-                    fiveHourPercent: fivePercent,
-                    weeklyPercent: weeklyPercent,
-                    signedIn: signedIn
-                )
-                self.statusItem.button?.toolTip = self.usageService.statusSummary
+                switch selection {
+                case .codex:
+                    let (five, weekly, authState) = codex
+                    let signedIn = authState == .authenticated
+                    self.statusItem.button?.image = MenuBarIconRenderer.render(
+                        fiveHourPercent: five?.percentRemaining,
+                        weeklyPercent: weekly?.percentRemaining,
+                        signedIn: signedIn,
+                        palette: .codex
+                    )
+                    self.statusItem.button?.toolTip = self.codexUsageService.statusSummary
+                case .claude:
+                    let (five, weekly, authState) = claude
+                    let signedIn = authState == .authenticated
+                    self.statusItem.button?.image = MenuBarIconRenderer.render(
+                        fiveHourPercent: five?.percentRemaining,
+                        weeklyPercent: weekly?.percentRemaining,
+                        signedIn: signedIn,
+                        palette: .claude
+                    )
+                    self.statusItem.button?.toolTip = self.claudeUsageService.statusSummary
+                }
             }
             .store(in: &cancellables)
     }
@@ -89,7 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPopover() {
         guard let button = statusItem.button else { return }
-        usageService.pollCurrentPage()
+        codexUsageService.pollCurrentPage()
+        claudeUsageService.pollCurrentPage()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         eventMonitor?.start()
     }
@@ -99,21 +126,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         eventMonitor?.stop()
     }
 
-    private func showLoginWindow() {
-        if loginWindowController == nil {
-            usageService.beginInteractiveSession()
-            loginWindowController = LoginWindowController(
-                webView: usageService.webView,
-                url: UsageService.usageURL,
+    private func showCodexLoginWindow() {
+        if codexLoginWindowController == nil {
+            codexUsageService.beginInteractiveSession()
+            codexLoginWindowController = LoginWindowController(
+                webView: codexUsageService.webView,
+                url: codexUsageService.usageURL,
+                title: codexUsageService.loginWindowTitle,
                 onClose: { [weak self] in
-                    self?.loginWindowController = nil
-                    self?.usageService.endInteractiveSession()
-                    self?.usageService.refresh(force: true)
+                    self?.codexLoginWindowController = nil
+                    self?.codexUsageService.endInteractiveSession()
+                    self?.codexUsageService.refresh(force: true)
                 }
             )
         }
-        loginWindowController?.showWindow(nil)
-        loginWindowController?.window?.makeKeyAndOrderFront(nil)
+        codexLoginWindowController?.showWindow(nil)
+        codexLoginWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func showClaudeLoginWindow() {
+        if claudeLoginWindowController == nil {
+            claudeUsageService.beginInteractiveSession()
+            claudeLoginWindowController = LoginWindowController(
+                webView: claudeUsageService.webView,
+                url: claudeUsageService.usageURL,
+                title: claudeUsageService.loginWindowTitle,
+                onClose: { [weak self] in
+                    self?.claudeLoginWindowController = nil
+                    self?.claudeUsageService.endInteractiveSession()
+                    self?.claudeUsageService.refresh(force: true)
+                }
+            )
+        }
+        claudeLoginWindowController?.showWindow(nil)
+        claudeLoginWindowController?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 }

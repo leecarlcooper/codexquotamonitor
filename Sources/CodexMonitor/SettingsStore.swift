@@ -13,6 +13,12 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    @Published var selectedUsageSource: UsageSource {
+        didSet {
+            UserDefaults.standard.set(selectedUsageSource.rawValue, forKey: Keys.selectedUsageSource)
+        }
+    }
+
     @Published var loginItemMessage: String?
 
     let canRegisterLoginItem: Bool
@@ -29,6 +35,14 @@ final class SettingsStore: ObservableObject {
             self.launchAtLogin = shouldEnable
             defaults.set(shouldEnable, forKey: Keys.launchAtLogin)
         }
+
+        if let stored = defaults.string(forKey: Keys.selectedUsageSource),
+           let source = UsageSource(rawValue: stored) {
+            self.selectedUsageSource = source
+        } else {
+            self.selectedUsageSource = .codex
+            defaults.set(UsageSource.codex.rawValue, forKey: Keys.selectedUsageSource)
+        }
     }
 
     func applyStartup() {
@@ -39,5 +53,11 @@ final class SettingsStore: ObservableObject {
 
     private enum Keys {
         static let launchAtLogin = "launchAtLogin"
+        static let selectedUsageSource = "selectedUsageSource"
     }
+}
+
+enum UsageSource: String, CaseIterable {
+    case codex
+    case claude
 }

@@ -4,8 +4,10 @@ import Foundation
 
 struct PopoverView: View {
     @ObservedObject var usageService: UsageService
+    @ObservedObject var claudeUsageService: UsageService
     @ObservedObject var settings: SettingsStore
     let onSignIn: () -> Void
+    let onClaudeSignIn: () -> Void
     let onRefresh: () -> Void
 
     var body: some View {
@@ -21,6 +23,7 @@ struct PopoverView: View {
                 header
                     .layoutPriority(1)
                 content
+                claudeSection
                 settingsSeparator
                 settingsSection
                 footer
@@ -29,13 +32,18 @@ struct PopoverView: View {
             .padding(.top, 6)
             .padding(.bottom, 10)
         }
-        .frame(width: 340, height: 368)
+        .frame(width: 340, height: 700)
     }
 
     private var header: some View {
         HStack {
+            selectionButton(for: .codex)
             Text("Codex")
                 .font(.system(size: 17, weight: .semibold))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    NSWorkspace.shared.open(usageService.usageURL)
+                }
             Spacer()
             Button(action: onRefresh) {
                 Image(systemName: "arrow.clockwise")
@@ -46,12 +54,50 @@ struct PopoverView: View {
 
     @ViewBuilder
     private var content: some View {
-        if usageService.authState == .needsLogin {
+        usageContent(
+            for: usageService,
+            signInLabel: "Open Codex Sign In",
+            signInAction: onSignIn,
+            titles: ("5 hour limit", "Weekly limit"),
+            palette: .codex
+        )
+    }
+
+    private var claudeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                selectionButton(for: .claude)
+                Text("Claude")
+                    .font(.system(size: 15, weight: .semibold))
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        NSWorkspace.shared.open(claudeUsageService.usageURL)
+                    }
+            }
+            usageContent(
+                for: claudeUsageService,
+                signInLabel: "Open Claude Sign In",
+                signInAction: onClaudeSignIn,
+                titles: ("Current session", "Weekly limits"),
+                palette: .claude
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func usageContent(
+        for service: UsageService,
+        signInLabel: String,
+        signInAction: @escaping () -> Void,
+        titles: (String, String),
+        palette: UsageBarPalette
+    ) -> some View {
+        if service.authState == .needsLogin {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Sign in to view limits")
                     .font(.system(size: 14, weight: .medium))
-                Button(action: onSignIn) {
-                    Text("Open Sign In")
+                Button(action: signInAction) {
+                    Text(signInLabel)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Color.accentColor.opacity(0.15))
@@ -59,12 +105,12 @@ struct PopoverView: View {
                 }
                 .buttonStyle(.plain)
             }
-        } else if usageService.fiveHourLimit == nil && usageService.weeklyLimit == nil {
+        } else if service.fiveHourLimit == nil && service.weeklyLimit == nil {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Loading usage…")
                     .font(.system(size: 14, weight: .medium))
-                Button(action: onSignIn) {
-                    Text("Open Sign In")
+                Button(action: signInAction) {
+                    Text(signInLabel)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(Color.accentColor.opacity(0.15))
@@ -75,16 +121,18 @@ struct PopoverView: View {
         } else {
             VStack(spacing: 12) {
                 UsageCard(
-                    title: "5 hour limit",
-                    limit: usageService.fiveHourLimit,
-                    referenceDate: usageService.lastUpdated,
-                    showTitle: true
+                    title: titles.0,
+                    limit: service.fiveHourLimit,
+                    referenceDate: service.lastUpdated,
+                    showTitle: true,
+                    palette: palette
                 )
                 UsageCard(
-                    title: "Weekly limit",
-                    limit: usageService.weeklyLimit,
-                    referenceDate: usageService.lastUpdated,
-                    showTitle: true
+                    title: titles.1,
+                    limit: service.weeklyLimit,
+                    referenceDate: service.lastUpdated,
+                    showTitle: true,
+                    palette: palette
                 )
             }
         }
@@ -119,11 +167,6 @@ struct PopoverView: View {
                     .foregroundColor(.secondary)
             }
             Spacer()
-            Button("Usage Page") {
-                NSWorkspace.shared.open(UsageService.usageURL)
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 11))
             Button("Quit") {
                 NSApp.terminate(nil)
             }
@@ -138,6 +181,7 @@ private struct UsageCard: View {
     let limit: UsageLimit?
     let referenceDate: Date?
     let showTitle: Bool
+    let palette: UsageBarPalette
 
     var body: some View {
         TimelineView(.periodic(from: Date(), by: 60)) { context in
@@ -179,7 +223,7 @@ private struct UsageCard: View {
                     .foregroundColor(.secondary)
             }
 
-            UsageBar(percent: limit?.percentRemaining)
+            UsageBar(percent: limit?.percentRemaining, palette: palette)
                 .frame(height: 10)
 
             Text(resetText(now: now))
@@ -202,7 +246,8 @@ private enum ResetCountdownFormatter {
         let trimmed = resetText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        if let interval = parseInterval(from: trimmed, now: now, referenceDate: referenceDate, calendar: calendar) {
+        let normalized = normalize(trimmed)
+        if let interval = parseInterval(from: normalized, now: now, referenceDate: referenceDate, calendar: calendar) {
             return format(interval: interval)
         }
         return nil
@@ -219,6 +264,9 @@ private enum ResetCountdownFormatter {
                 return referenceDate.addingTimeInterval(relative.interval).timeIntervalSince(now)
             }
             return relative.interval
+        }
+        if let weekdayDate = parseWeekdayDate(from: text, now: now, calendar: calendar) {
+            return weekdayDate.timeIntervalSince(now)
         }
         if let absoluteDate = parseAbsoluteDate(from: text, now: now, calendar: calendar) {
             return absoluteDate.timeIntervalSince(now)
@@ -299,6 +347,59 @@ private enum ResetCountdownFormatter {
         }
 
         return calendar.startOfDay(for: baseDate)
+    }
+
+    private static func parseWeekdayDate(from text: String, now: Date, calendar: Calendar) -> Date? {
+        let lower = text.lowercased()
+        let pattern = "\\\\b(mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\\\\b"
+        let token: String
+        if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+           let match = regex.firstMatch(in: lower, range: NSRange(lower.startIndex..., in: lower)),
+           let range = Range(match.range(at: 1), in: lower) {
+            token = String(lower[range])
+        } else {
+            let candidates = [
+                "sunday", "sun",
+                "monday", "mon",
+                "tuesday", "tue",
+                "wednesday", "wed",
+                "thursday", "thu",
+                "friday", "fri",
+                "saturday", "sat"
+            ]
+            guard let found = candidates.first(where: { lower.contains($0) }) else { return nil }
+            token = found
+        }
+        let weekdayMap: [String: Int] = [
+            "sun": 1, "sunday": 1,
+            "mon": 2, "monday": 2,
+            "tue": 3, "tuesday": 3,
+            "wed": 4, "wednesday": 4,
+            "thu": 5, "thursday": 5,
+            "fri": 6, "friday": 6,
+            "sat": 7, "saturday": 7
+        ]
+
+        guard let weekday = weekdayMap[token] else { return nil }
+        let time = parseTimeComponents(from: text) ?? DateComponents(hour: 0, minute: 0)
+
+        var components = DateComponents()
+        components.weekday = weekday
+        components.hour = time.hour
+        components.minute = time.minute
+
+        return calendar.nextDate(
+            after: now,
+            matching: components,
+            matchingPolicy: .nextTimePreservingSmallerComponents,
+            direction: .forward
+        )
+    }
+
+    private static func normalize(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "\u{202F}", with: " ")
     }
 
     private static func parseAbsoluteDate(from text: String, now: Date, calendar: Calendar) -> Date? {
@@ -405,13 +506,14 @@ private enum ResetCountdownFormatter {
 
 private struct UsageBar: View {
     let percent: Int?
+    let palette: UsageBarPalette
 
     private var clamped: CGFloat {
         CGFloat(max(0, min(100, percent ?? 0))) / 100
     }
 
-    private var barColor: Color {
-        UsageBarStyle.swiftUIColor(for: percent)
+    private var resolvedBarColor: Color {
+        UsageBarStyle.swiftUIColor(for: percent, palette: palette)
     }
 
     var body: some View {
@@ -420,9 +522,21 @@ private struct UsageBar: View {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(Color.white.opacity(0.12))
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(barColor)
+                    .fill(resolvedBarColor)
                     .frame(width: proxy.size.width * clamped)
             }
         }
+    }
+}
+
+private extension PopoverView {
+    func selectionButton(for source: UsageSource) -> some View {
+        Button(action: { settings.selectedUsageSource = source }) {
+            Image(systemName: settings.selectedUsageSource == source ? "largecircle.fill.circle" : "circle")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.secondary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(source == .codex ? "Show Codex in menu bar" : "Show Claude in menu bar")
     }
 }

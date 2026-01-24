@@ -8,7 +8,11 @@ struct UsageLimit: Codable {
 }
 
 final class UsageService: NSObject, ObservableObject {
-    static let usageURL = URL(string: "https://chatgpt.com/codex/settings/usage")!
+    struct Configuration {
+        let productName: String
+        let usageURL: URL
+        let loginWindowTitle: String
+    }
 
     @Published var fiveHourLimit: UsageLimit?
     @Published var weeklyLimit: UsageLimit?
@@ -22,15 +26,20 @@ final class UsageService: NSObject, ObservableObject {
         case needsLogin
     }
 
+    let configuration: Configuration
+
+    var usageURL: URL { configuration.usageURL }
+    var loginWindowTitle: String { configuration.loginWindowTitle }
+
     var statusSummary: String {
         if authState == .needsLogin {
-            return "Codex usage (sign in required)"
+            return "\(configuration.productName) usage (sign in required)"
         }
         let five = fiveHourLimit?.percentRemaining
         let weekly = weeklyLimit?.percentRemaining
         let fiveText = five != nil ? "5h: \(five!)%" : "5h: --"
         let weeklyText = weekly != nil ? "Weekly: \(weekly!)%" : "Weekly: --"
-        return "Codex usage (\(fiveText), \(weeklyText))"
+        return "\(configuration.productName) usage (\(fiveText), \(weeklyText))"
     }
 
     private(set) var webView: WKWebView
@@ -42,7 +51,8 @@ final class UsageService: NSObject, ObservableObject {
     private var missingCount = 0
     private let maxMissingCount = 3
 
-    override init() {
+    init(configuration: Configuration) {
+        self.configuration = configuration
         self.webView = WebViewFactory.makeWebView()
         super.init()
         webView.navigationDelegate = self
@@ -61,7 +71,7 @@ final class UsageService: NSObject, ObservableObject {
         if isInteractiveSession && !force { return }
         isLoading = true
         parseAttempts = 0
-        let request = URLRequest(url: Self.usageURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
+        let request = URLRequest(url: configuration.usageURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
         DispatchQueue.main.async {
             self.webView.load(request)
         }
@@ -188,7 +198,7 @@ private extension UsageService {
         const lower = text.toLowerCase();
         if (!lower.includes(label)) return false;
         if (!/\\\\d+\\\\s*%/.test(lower)) return false;
-        if (!lower.includes('remaining')) return false;
+        if (!lower.includes('remaining') && !lower.includes('used')) return false;
         for (const other of otherLabels) {
           if (lower.includes(other)) return false;
         }
@@ -218,7 +228,8 @@ private extension UsageService {
       }
 
       function extractResetTextFromLines(lines) {
-        for (const line of lines) {
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
           const cleaned = line.replace(/^[•\\-]\\s*/, '');
           const match = cleaned.match(/^(?:next\\s+)?resets?\\b\\s*:?\\s*(.*)/i);
           if (match) {
@@ -226,9 +237,20 @@ private extension UsageService {
             if (value) {
               return value;
             }
+            const next = lines[i + 1];
+            if (next) {
+              return next.trim();
+            }
           }
         }
         return '';
+      }
+
+      function toRemaining(percent, text) {
+        const lower = text.toLowerCase();
+        if (lower.includes('remaining')) return percent;
+        if (lower.includes('used')) return Math.max(0, 100 - percent);
+        return percent;
       }
 
       function extract(labelVariants, otherLabels) {
@@ -236,7 +258,7 @@ private extension UsageService {
           const labelLower = label.toLowerCase();
           const cardText = findCardText(label, otherLabels);
           if (!cardText) continue;
-          const labelRegex = new RegExp(escapeRegExp(label) + \"[\\\\s\\\\S]*?(\\\\d+)\\\\s*%\\\\s*remaining\", \"i\");
+          const labelRegex = new RegExp(escapeRegExp(label) + \"[\\\\s\\\\S]*?(\\\\d+)\\\\s*%\\\\s*(?:remaining|used)\", \"i\");
           const percentMatch = cardText.match(labelRegex) || cardText.match(/(\\\\d+)\\\\s*%/);
           let resetText = '';
           const lines = cardText.split(/\\n+/).map(line => line.trim()).filter(Boolean);
@@ -256,8 +278,9 @@ private extension UsageService {
             resetText = fallbackLine ? fallbackLine.trim() : '';
           }
           if (percentMatch) {
+            const rawPercent = parseInt(percentMatch[1], 10);
             return {
-              percentRemaining: parseInt(percentMatch[1], 10),
+              percentRemaining: toRemaining(rawPercent, cardText),
               resetText
             };
           }
@@ -296,6 +319,7 @@ private extension UsageService {
             if (percentLine) {
               const percentMatch = percentLine.match(/(\\d+)\\s*%/);
               if (percentMatch) {
+                const rawPercent = parseInt(percentMatch[1], 10);
                 let resetText = '';
                 if (resetLine) {
                   resetText = extractResetTextFromLines([resetLine]);
@@ -303,7 +327,8 @@ private extension UsageService {
                     resetText = resetLine.replace(/^(?:next\\s+)?resets?\\s*:?\\s*/i, '').trim();
                   }
                 }
-                return { percentRemaining: parseInt(percentMatch[1], 10), resetText };
+                const context = [lines[i], percentLine, resetLine || ''].join(' ');
+                return { percentRemaining: toRemaining(rawPercent, context), resetText };
               }
             }
           }
@@ -311,8 +336,17 @@ private extension UsageService {
         return null;
       }
 
-      const fiveHourLabels = ['5 hour usage limit', '5-hour usage limit', '5 hour limit'];
-      const weeklyLabels = ['weekly usage limit', 'weekly limit'];
+      const fiveHourLabels = [
+        '5 hour usage limit',
+        '5-hour usage limit',
+        '5 hour limit',
+        'current session'
+      ];
+      const weeklyLabels = [
+        'weekly usage limit',
+        'weekly limit',
+        'weekly limits'
+      ];
 
       const fiveHour = extract(fiveHourLabels, weeklyLabels);
       const weekly = extract(weeklyLabels, fiveHourLabels);
@@ -340,4 +374,18 @@ private extension UsageService {
       return JSON.stringify({ fiveHour: fiveHourFallback, weekly: weeklyFallback, hasUsage, authHint });
     })();
     """
+}
+
+extension UsageService.Configuration {
+    static let codex = UsageService.Configuration(
+        productName: "Codex",
+        usageURL: URL(string: "https://chatgpt.com/codex/settings/usage")!,
+        loginWindowTitle: "Sign in to ChatGPT"
+    )
+
+    static let claude = UsageService.Configuration(
+        productName: "Claude",
+        usageURL: URL(string: "https://claude.ai/settings/usage")!,
+        loginWindowTitle: "Sign in to Claude"
+    )
 }

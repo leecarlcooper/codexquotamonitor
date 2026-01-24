@@ -1,7 +1,12 @@
 import Cocoa
 
 enum MenuBarIconRenderer {
-    static func render(fiveHourPercent: Int?, weeklyPercent: Int?, signedIn: Bool) -> NSImage {
+    static func render(
+        fiveHourPercent: Int?,
+        weeklyPercent: Int?,
+        signedIn: Bool,
+        palette: UsageBarPalette = .codex
+    ) -> NSImage {
         let size = NSSize(width: 26, height: 18)
         let image = NSImage(size: size)
         image.lockFocus()
@@ -14,21 +19,28 @@ enum MenuBarIconRenderer {
         let bottomY = startY
         let topY = startY + barHeight + spacing
 
-        drawBar(y: topY, width: fullWidth, height: barHeight, percent: fiveHourPercent, signedIn: signedIn)
-        drawBar(y: bottomY, width: fullWidth, height: barHeight, percent: weeklyPercent, signedIn: signedIn)
+        drawBar(y: topY, width: fullWidth, height: barHeight, percent: fiveHourPercent, signedIn: signedIn, palette: palette)
+        drawBar(y: bottomY, width: fullWidth, height: barHeight, percent: weeklyPercent, signedIn: signedIn, palette: palette)
 
         image.unlockFocus()
         image.isTemplate = false
         return image
     }
 
-    private static func drawBar(y: CGFloat, width: CGFloat, height: CGFloat, percent: Int?, signedIn: Bool) {
+    private static func drawBar(
+        y: CGFloat,
+        width: CGFloat,
+        height: CGFloat,
+        percent: Int?,
+        signedIn: Bool,
+        palette: UsageBarPalette
+    ) {
         let outlineColor = NSColor.separatorColor.withAlphaComponent(0.6)
         let backgroundColor: NSColor
         let fillColor: NSColor
         if signedIn {
             backgroundColor = NSColor.white.withAlphaComponent(0.85)
-            fillColor = color(for: percent)
+            fillColor = color(for: percent, palette: palette)
         } else {
             backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.35)
             fillColor = NSColor.secondaryLabelColor
@@ -51,7 +63,7 @@ enum MenuBarIconRenderer {
         fillPath.fill()
     }
 
-    private static func color(for percent: Int?) -> NSColor {
-        UsageBarStyle.appKitColor(for: percent)
+    private static func color(for percent: Int?, palette: UsageBarPalette) -> NSColor {
+        UsageBarStyle.appKitColor(for: percent, palette: palette)
     }
 }
