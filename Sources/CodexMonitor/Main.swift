@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables: Set<AnyCancellable> = []
     private var codexLoginWindowController: LoginWindowController?
     private var claudeLoginWindowController: LoginWindowController?
+    private var isLoggingOut = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
@@ -57,6 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onRefresh: { [weak self] in
                 self?.codexUsageService.refresh(force: true)
                 self?.claudeUsageService.refresh(force: true)
+            },
+            onLogout: { [weak self] in
+                self?.logoutAllAccounts()
             }
         )
         popover.contentViewController = NSHostingController(rootView: view)
@@ -84,8 +88,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let (five, weekly, authState) = codex
                     let signedIn = authState == .authenticated
                     self.statusItem.button?.image = MenuBarIconRenderer.render(
-                        fiveHourPercent: five?.percentRemaining,
-                        weeklyPercent: weekly?.percentRemaining,
+                        fiveHourPercent: five?.percent,
+                        weeklyPercent: weekly?.percent,
                         signedIn: signedIn,
                         palette: .codex
                     )
@@ -94,8 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let (five, weekly, authState) = claude
                     let signedIn = authState == .authenticated
                     self.statusItem.button?.image = MenuBarIconRenderer.render(
-                        fiveHourPercent: five?.percentRemaining,
-                        weeklyPercent: weekly?.percentRemaining,
+                        fiveHourPercent: five?.percent,
+                        weeklyPercent: weekly?.percent,
                         signedIn: signedIn,
                         palette: .claude
                     )
@@ -134,9 +138,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 url: codexUsageService.usageURL,
                 title: codexUsageService.loginWindowTitle,
                 onClose: { [weak self] in
-                    self?.codexLoginWindowController = nil
-                    self?.codexUsageService.endInteractiveSession()
-                    self?.codexUsageService.refresh(force: true)
+                    guard let self else { return }
+                    self.codexLoginWindowController = nil
+                    self.codexUsageService.endInteractiveSession()
+                    if !self.isLoggingOut {
+                        self.codexUsageService.refresh(force: true)
+                    }
                 }
             )
         }
@@ -153,14 +160,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 url: claudeUsageService.usageURL,
                 title: claudeUsageService.loginWindowTitle,
                 onClose: { [weak self] in
-                    self?.claudeLoginWindowController = nil
-                    self?.claudeUsageService.endInteractiveSession()
-                    self?.claudeUsageService.refresh(force: true)
+                    guard let self else { return }
+                    self.claudeLoginWindowController = nil
+                    self.claudeUsageService.endInteractiveSession()
+                    if !self.isLoggingOut {
+                        self.claudeUsageService.refresh(force: true)
+                    }
                 }
             )
         }
         claudeLoginWindowController?.showWindow(nil)
         claudeLoginWindowController?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func logoutAllAccounts() {
+        guard !isLoggingOut else { return }
+        isLoggingOut = true
+
+        codexUsageService.resetForLogout()
+        claudeUsageService.resetForLogout()
+
+        codexLoginWindowController?.close()
+        claudeLoginWindowController?.close()
+        codexLoginWindowController = nil
+        claudeLoginWindowController = nil
+
+        WebViewFactory.clearWebsiteData { [weak self] in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.isLoggingOut = false
+                self.codexUsageService.refresh(force: true)
+                self.claudeUsageService.refresh(force: true)
+            }
+        }
     }
 }

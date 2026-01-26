@@ -9,6 +9,7 @@ struct PopoverView: View {
     let onSignIn: () -> Void
     let onClaudeSignIn: () -> Void
     let onRefresh: () -> Void
+    let onLogout: () -> Void
 
     var body: some View {
         ZStack {
@@ -167,6 +168,11 @@ struct PopoverView: View {
                     .foregroundColor(.secondary)
             }
             Spacer()
+            Button("Log out") {
+                onLogout()
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 11))
             Button("Quit") {
                 NSApp.terminate(nil)
             }
@@ -190,8 +196,12 @@ private struct UsageCard: View {
     }
 
     private var percentText: String {
-        guard let percent = limit?.percentRemaining else { return "--%" }
+        guard let percent = limit?.percent else { return "--%" }
         return "\(percent)%"
+    }
+
+    private var metricText: String {
+        limit?.metric.label ?? "remaining"
     }
 
     private func resetText(now: Date) -> String {
@@ -218,12 +228,12 @@ private struct UsageCard: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(percentText)
                     .font(.system(size: 24, weight: .bold))
-                Text("remaining")
+                Text(metricText)
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
             }
 
-            UsageBar(percent: limit?.percentRemaining, palette: palette)
+            UsageBar(fillPercent: limit?.percent, stylePercent: limit?.percent, palette: palette)
                 .frame(height: 10)
 
             Text(resetText(now: now))
@@ -505,15 +515,16 @@ private enum ResetCountdownFormatter {
 }
 
 private struct UsageBar: View {
-    let percent: Int?
+    let fillPercent: Int?
+    let stylePercent: Int?
     let palette: UsageBarPalette
 
     private var clamped: CGFloat {
-        CGFloat(max(0, min(100, percent ?? 0))) / 100
+        CGFloat(max(0, min(100, fillPercent ?? 0))) / 100
     }
 
     private var resolvedBarColor: Color {
-        UsageBarStyle.swiftUIColor(for: percent, palette: palette)
+        UsageBarStyle.swiftUIColor(for: stylePercent, palette: palette)
     }
 
     var body: some View {

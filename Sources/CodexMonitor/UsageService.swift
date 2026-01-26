@@ -3,8 +3,13 @@ import WebKit
 import Combine
 
 struct UsageLimit: Codable {
-    let percentRemaining: Int
+    let percent: Int
+    let metric: UsageMetric
     let resetText: String
+
+    var percentRemaining: Int {
+        metric.remainingPercent(from: percent)
+    }
 }
 
 final class UsageService: NSObject, ObservableObject {
@@ -12,6 +17,7 @@ final class UsageService: NSObject, ObservableObject {
         let productName: String
         let usageURL: URL
         let loginWindowTitle: String
+        let defaultMetric: UsageMetric
     }
 
     @Published var fiveHourLimit: UsageLimit?
@@ -35,10 +41,19 @@ final class UsageService: NSObject, ObservableObject {
         if authState == .needsLogin {
             return "\(configuration.productName) usage (sign in required)"
         }
-        let five = fiveHourLimit?.percentRemaining
-        let weekly = weeklyLimit?.percentRemaining
-        let fiveText = five != nil ? "5h: \(five!)%" : "5h: --"
-        let weeklyText = weekly != nil ? "Weekly: \(weekly!)%" : "Weekly: --"
+        let fiveText: String
+        if let fiveHourLimit {
+            fiveText = "5h: \(fiveHourLimit.percent)% \(fiveHourLimit.metric.label)"
+        } else {
+            fiveText = "5h: --"
+        }
+
+        let weeklyText: String
+        if let weeklyLimit {
+            weeklyText = "Weekly: \(weeklyLimit.percent)% \(weeklyLimit.metric.label)"
+        } else {
+            weeklyText = "Weekly: --"
+        }
         return "\(configuration.productName) usage (\(fiveText), \(weeklyText))"
     }
 
@@ -56,6 +71,19 @@ final class UsageService: NSObject, ObservableObject {
         self.webView = WebViewFactory.makeWebView()
         super.init()
         webView.navigationDelegate = self
+    }
+
+    func resetForLogout() {
+        endInteractiveSession()
+        webView.stopLoading()
+        isLoading = false
+        parseAttempts = 0
+        missingCount = 0
+        fiveHourLimit = nil
+        weeklyLimit = nil
+        lastUpdated = nil
+        errorMessage = nil
+        authState = .needsLogin
     }
 
     func startPolling() {
@@ -103,8 +131,12 @@ final class UsageService: NSObject, ObservableObject {
             let payload = try JSONDecoder().decode(UsagePayload.self, from: data)
             if payload.hasUsage {
                 authState = .authenticated
-                fiveHourLimit = payload.fiveHour
-                weeklyLimit = payload.weekly
+                fiveHourLimit = payload.fiveHour.map { limit in
+                    UsageLimit(percent: limit.percent, metric: limit.metric ?? configuration.defaultMetric, resetText: limit.resetText)
+                }
+                weeklyLimit = payload.weekly.map { limit in
+                    UsageLimit(percent: limit.percent, metric: limit.metric ?? configuration.defaultMetric, resetText: limit.resetText)
+                }
                 lastUpdated = Date()
                 errorMessage = nil
                 missingCount = 0
@@ -181,10 +213,16 @@ extension UsageService: WKNavigationDelegate {
 }
 
 private struct UsagePayload: Codable {
-    let fiveHour: UsageLimit?
-    let weekly: UsageLimit?
+    let fiveHour: ParsedUsageLimit?
+    let weekly: ParsedUsageLimit?
     let hasUsage: Bool
     let authHint: String?
+}
+
+private struct ParsedUsageLimit: Codable {
+    let percent: Int
+    let metric: UsageMetric?
+    let resetText: String
 }
 
 private extension UsageService {
@@ -246,13 +284,6 @@ private extension UsageService {
         return '';
       }
 
-      function toRemaining(percent, text) {
-        const lower = text.toLowerCase();
-        if (lower.includes('remaining')) return percent;
-        if (lower.includes('used')) return Math.max(0, 100 - percent);
-        return percent;
-      }
-
       function extract(labelVariants, otherLabels) {
         for (const label of labelVariants) {
           const labelLower = label.toLowerCase();
@@ -279,8 +310,11 @@ private extension UsageService {
           }
           if (percentMatch) {
             const rawPercent = parseInt(percentMatch[1], 10);
+            const metricMatch = cardText.match(/\\b(\\d+)\\s*%\\s*(remaining|used)\\b/i);
+            const metric = metricMatch ? metricMatch[2].toLowerCase() : null;
             return {
-              percentRemaining: toRemaining(rawPercent, cardText),
+              percent: rawPercent,
+              metric,
               resetText
             };
           }
@@ -328,7 +362,9 @@ private extension UsageService {
                   }
                 }
                 const context = [lines[i], percentLine, resetLine || ''].join(' ');
-                return { percentRemaining: toRemaining(rawPercent, context), resetText };
+                const metricMatch = context.match(/\\b(\\d+)\\s*%\\s*(remaining|used)\\b/i);
+                const metric = metricMatch ? metricMatch[2].toLowerCase() : null;
+                return { percent: rawPercent, metric, resetText };
               }
             }
           }
@@ -380,12 +416,14 @@ extension UsageService.Configuration {
     static let codex = UsageService.Configuration(
         productName: "Codex",
         usageURL: URL(string: "https://chatgpt.com/codex/settings/usage")!,
-        loginWindowTitle: "Sign in to ChatGPT"
+        loginWindowTitle: "Sign in to ChatGPT",
+        defaultMetric: .remaining
     )
 
     static let claude = UsageService.Configuration(
         productName: "Claude",
         usageURL: URL(string: "https://claude.ai/settings/usage")!,
-        loginWindowTitle: "Sign in to Claude"
+        loginWindowTitle: "Sign in to Claude",
+        defaultMetric: .used
     )
 }
