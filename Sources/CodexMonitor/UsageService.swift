@@ -43,14 +43,14 @@ final class UsageService: NSObject, ObservableObject {
         }
         let fiveText: String
         if let fiveHourLimit {
-            fiveText = "5h: \(fiveHourLimit.percent)% \(fiveHourLimit.metric.label)"
+            fiveText = "5h: \(fiveHourLimit.percentRemaining)% remaining"
         } else {
             fiveText = "5h: --"
         }
 
         let weeklyText: String
         if let weeklyLimit {
-            weeklyText = "Weekly: \(weeklyLimit.percent)% \(weeklyLimit.metric.label)"
+            weeklyText = "Weekly: \(weeklyLimit.percentRemaining)% remaining"
         } else {
             weeklyText = "Weekly: --"
         }

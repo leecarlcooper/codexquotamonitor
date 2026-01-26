@@ -196,12 +196,12 @@ private struct UsageCard: View {
     }
 
     private var percentText: String {
-        guard let percent = limit?.percent else { return "--%" }
+        guard let percent = limit?.percentRemaining else { return "--%" }
         return "\(percent)%"
     }
 
     private var metricText: String {
-        limit?.metric.label ?? "remaining"
+        "remaining"
     }
 
     private func resetText(now: Date) -> String {
@@ -233,7 +233,7 @@ private struct UsageCard: View {
                     .foregroundColor(.secondary)
             }
 
-            UsageBar(fillPercent: limit?.percent, stylePercent: limit?.percent, palette: palette)
+            UsageBar(fillPercent: limit?.percentRemaining, stylePercent: limit?.percentRemaining, palette: palette)
                 .frame(height: 10)
 
             Text(resetText(now: now))

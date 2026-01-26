@@ -88,8 +88,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let (five, weekly, authState) = codex
                     let signedIn = authState == .authenticated
                     self.statusItem.button?.image = MenuBarIconRenderer.render(
-                        fiveHourPercent: five?.percent,
-                        weeklyPercent: weekly?.percent,
+                        fiveHourPercent: five?.percentRemaining,
+                        weeklyPercent: weekly?.percentRemaining,
                         signedIn: signedIn,
                         palette: .codex
                     )
@@ -98,8 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let (five, weekly, authState) = claude
                     let signedIn = authState == .authenticated
                     self.statusItem.button?.image = MenuBarIconRenderer.render(
-                        fiveHourPercent: five?.percent,
-                        weeklyPercent: weekly?.percent,
+                        fiveHourPercent: five?.percentRemaining,
+                        weeklyPercent: weekly?.percentRemaining,
                         signedIn: signedIn,
                         palette: .claude
                     )
