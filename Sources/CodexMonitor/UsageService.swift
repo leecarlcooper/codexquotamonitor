@@ -232,6 +232,29 @@ private extension UsageService {
         return str.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
       }
 
+      function extractPercentAndMetric(text) {
+        const afterMatch = text.match(/\\b(\\d+)\\s*%\\s*[()\\s:,-]*\\s*(remaining|used)\\b/i);
+        if (afterMatch) {
+          return { percent: parseInt(afterMatch[1], 10), metric: afterMatch[2].toLowerCase() };
+        }
+        const beforeMatch = text.match(/\\b(remaining|used)\\b\\s*[()\\s:,-]*\\s*(\\d+)\\s*%\\b/i);
+        if (beforeMatch) {
+          return { percent: parseInt(beforeMatch[2], 10), metric: beforeMatch[1].toLowerCase() };
+        }
+        return null;
+      }
+
+      function metricForPercent(text, percent) {
+        const afterPattern = new RegExp(\"\\\\b\" + percent + \"\\\\s*%\\\\s*[()\\\\s:,-]*\\\\s*(remaining|used)\\\\b\", \"i\");
+        const afterMatch = text.match(afterPattern);
+        if (afterMatch) return afterMatch[1].toLowerCase();
+
+        const beforePattern = new RegExp(\"\\\\b(remaining|used)\\\\b\\\\s*[()\\\\s:,-]*\\\\s*\" + percent + \"\\\\s*%\\\\b\", \"i\");
+        const beforeMatch = text.match(beforePattern);
+        if (beforeMatch) return beforeMatch[1].toLowerCase();
+        return null;
+      }
+
       function isCardText(text, label, otherLabels) {
         const lower = text.toLowerCase();
         if (!lower.includes(label)) return false;
@@ -289,7 +312,10 @@ private extension UsageService {
           const labelLower = label.toLowerCase();
           const cardText = findCardText(label, otherLabels);
           if (!cardText) continue;
-          const labelRegex = new RegExp(escapeRegExp(label) + \"[\\\\s\\\\S]*?(\\\\d+)\\\\s*%\\\\s*(?:remaining|used)\", \"i\");
+          const labelIndex = cardText.toLowerCase().indexOf(labelLower);
+          const searchText = labelIndex >= 0 ? cardText.slice(labelIndex) : cardText;
+          const percentMetricMatch = extractPercentAndMetric(searchText) || extractPercentAndMetric(cardText);
+          const labelRegex = new RegExp(escapeRegExp(label) + \"[\\\\s\\\\S]*?(\\\\d+)\\\\s*%\", \"i\");
           const percentMatch = cardText.match(labelRegex) || cardText.match(/(\\\\d+)\\\\s*%/);
           let resetText = '';
           const lines = cardText.split(/\\n+/).map(line => line.trim()).filter(Boolean);
@@ -308,10 +334,9 @@ private extension UsageService {
             });
             resetText = fallbackLine ? fallbackLine.trim() : '';
           }
-          if (percentMatch) {
-            const rawPercent = parseInt(percentMatch[1], 10);
-            const metricMatch = cardText.match(/\\b(\\d+)\\s*%\\s*(remaining|used)\\b/i);
-            const metric = metricMatch ? metricMatch[2].toLowerCase() : null;
+          if (percentMetricMatch || percentMatch) {
+            const rawPercent = percentMetricMatch ? percentMetricMatch.percent : parseInt(percentMatch[1], 10);
+            const metric = percentMetricMatch ? percentMetricMatch.metric : metricForPercent(cardText, rawPercent);
             return {
               percent: rawPercent,
               metric,
@@ -351,9 +376,10 @@ private extension UsageService {
               }
             }
             if (percentLine) {
-              const percentMatch = percentLine.match(/(\\d+)\\s*%/);
-              if (percentMatch) {
-                const rawPercent = parseInt(percentMatch[1], 10);
+              const percentMetricMatch = extractPercentAndMetric(percentLine);
+              const percentOnlyMatch = percentMetricMatch ? null : percentLine.match(/(\\d+)\\s*%/);
+              if (percentMetricMatch || percentOnlyMatch) {
+                const rawPercent = percentMetricMatch ? percentMetricMatch.percent : parseInt(percentOnlyMatch[1], 10);
                 let resetText = '';
                 if (resetLine) {
                   resetText = extractResetTextFromLines([resetLine]);
@@ -362,8 +388,7 @@ private extension UsageService {
                   }
                 }
                 const context = [lines[i], percentLine, resetLine || ''].join(' ');
-                const metricMatch = context.match(/\\b(\\d+)\\s*%\\s*(remaining|used)\\b/i);
-                const metric = metricMatch ? metricMatch[2].toLowerCase() : null;
+                const metric = percentMetricMatch ? percentMetricMatch.metric : metricForPercent(context, rawPercent);
                 return { percent: rawPercent, metric, resetText };
               }
             }
