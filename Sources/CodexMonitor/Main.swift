@@ -1,6 +1,9 @@
 import Cocoa
 import Combine
 import SwiftUI
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 @main
 struct CodexMonitorMain {
@@ -83,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] selection, codex, claude in
                 guard let self else { return }
+                self.publishWidgetSnapshot()
                 switch selection {
                 case .codex:
                     let (five, weekly, authState) = codex
@@ -107,6 +111,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             .store(in: &cancellables)
+    }
+
+    private func publishWidgetSnapshot() {
+        let snapshot = QuotaWidgetSnapshot(
+            codex: makeProductSnapshot(
+                product: .codex,
+                service: codexUsageService,
+                shortTitle: "5 hour limit",
+                weeklyTitle: "Weekly limit"
+            ),
+            claude: makeProductSnapshot(
+                product: .claude,
+                service: claudeUsageService,
+                shortTitle: "Current session",
+                weeklyTitle: "Weekly limits"
+            ),
+            selectedProduct: selectedQuotaProduct,
+            savedAt: Date()
+        ).preservingLastKnownValues(from: QuotaWidgetStore.load())
+        QuotaWidgetStore.save(snapshot)
+#if canImport(WidgetKit)
+        WidgetCenter.shared.reloadTimelines(ofKind: QuotaWidgetStore.widgetKind)
+#endif
+    }
+
+    private func makeProductSnapshot(
+        product: QuotaProduct,
+        service: UsageService,
+        shortTitle: String,
+        weeklyTitle: String
+    ) -> QuotaProductSnapshot {
+        QuotaProductSnapshot(
+            product: product,
+            shortTitle: shortTitle,
+            weeklyTitle: weeklyTitle,
+            shortLimit: service.fiveHourLimit.map { limit in
+                QuotaLimitSnapshot(percentRemaining: limit.percentRemaining, resetText: limit.resetText)
+            },
+            weeklyLimit: service.weeklyLimit.map { limit in
+                QuotaLimitSnapshot(percentRemaining: limit.percentRemaining, resetText: limit.resetText)
+            },
+            authState: widgetAuthState(for: service.authState),
+            errorMessage: service.errorMessage,
+            lastUpdated: service.lastUpdated
+        )
+    }
+
+    private var selectedQuotaProduct: QuotaProduct {
+        switch settingsStore.selectedUsageSource {
+        case .codex:
+            return .codex
+        case .claude:
+            return .claude
+        }
+    }
+
+    private func widgetAuthState(for authState: UsageService.AuthState) -> QuotaAuthState {
+        switch authState {
+        case .unknown:
+            return .unknown
+        case .authenticated:
+            return .authenticated
+        case .needsLogin:
+            return .needsLogin
+        }
     }
 
     @objc private func togglePopover() {

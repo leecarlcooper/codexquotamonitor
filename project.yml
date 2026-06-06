@@ -1,0 +1,74 @@
+name: CodexMonitor
+options:
+  bundleIdPrefix: com.codexmonitor
+  createIntermediateGroups: true
+configs:
+  Debug: debug
+  Release: release
+settings:
+  base:
+    SWIFT_VERSION: 5.9
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+targets:
+  CodexMonitor:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Sources/CodexMonitor
+    info:
+      path: Config/CodexMonitor-Info.plist
+      properties:
+        CFBundleDisplayName: CodexMonitor
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1.0.0"
+        LSMinimumSystemVersion: "13.0"
+        LSUIElement: true
+        NSHighResolutionCapable: true
+        NSPrincipalClass: NSApplication
+    dependencies:
+      - target: CodexMonitorWidgetExtension
+    settings:
+      base:
+        PRODUCT_NAME: CodexMonitor
+        PRODUCT_BUNDLE_IDENTIFIER: com.codexmonitor.app
+        INFOPLIST_FILE: Config/CodexMonitor-Info.plist
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks @executable_path/../PlugIns"
+  CodexMonitorWidgetExtension:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources/CodexMonitorWidget
+      - path: Sources/CodexMonitor/QuotaWidgetSnapshot.swift
+      - path: Sources/CodexMonitor/ResetCountdownFormatter.swift
+      - path: Sources/CodexMonitor/UsageBarStyle.swift
+    info:
+      path: Config/CodexMonitorWidget-Info.plist
+      properties:
+        CFBundleDisplayName: AI Quota
+        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "1.0.0"
+        LSMinimumSystemVersion: "14.0"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: Config/CodexMonitorWidget.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+    settings:
+      base:
+        PRODUCT_NAME: CodexMonitorWidgetExtension
+        PRODUCT_BUNDLE_IDENTIFIER: com.codexmonitor.app.widget
+        INFOPLIST_FILE: Config/CodexMonitorWidget-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Config/CodexMonitorWidget.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        ENABLE_APP_SANDBOX: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks @executable_path/../../Frameworks"
+schemes:
+  CodexMonitor:
+    build:
+      targets:
+        CodexMonitor: all
+        CodexMonitorWidgetExtension: all
