@@ -101,6 +101,17 @@ struct QuotaWidgetSnapshot: Codable, Equatable {
     let selectedProduct: QuotaProduct
     let savedAt: Date
 
+    /// How long previously saved values may be re-used while a refresh is failing.
+    /// Beyond this age the real (empty/unknown) state is shown instead of a frozen percentage.
+    static let maxPreservedValueAge: TimeInterval = 30 * 60
+
+    /// A snapshot older than this (≈3 missed polls) is flagged as stale in the widget.
+    static let staleAfter: TimeInterval = 15 * 60
+
+    var latestUpdatedAt: Date? {
+        [codex.lastUpdated, claude.lastUpdated].compactMap { $0 }.max()
+    }
+
     static let placeholder = QuotaWidgetSnapshot(
         codex: QuotaProductSnapshot(
             product: .codex,
@@ -151,10 +162,10 @@ struct QuotaWidgetSnapshot: Codable, Equatable {
         savedAt: Date()
     )
 
-    func preservingLastKnownValues(from previous: QuotaWidgetSnapshot?) -> QuotaWidgetSnapshot {
+    func preservingLastKnownValues(from previous: QuotaWidgetSnapshot?, now: Date = Date()) -> QuotaWidgetSnapshot {
         guard let previous else { return self }
-        let nextCodex = codex.preservingLastKnownValues(from: previous.codex)
-        let nextClaude = claude.preservingLastKnownValues(from: previous.claude)
+        let nextCodex = codex.preservingLastKnownValues(from: previous.codex, now: now)
+        let nextClaude = claude.preservingLastKnownValues(from: previous.claude, now: now)
         let didPreserveEverything = nextCodex == previous.codex && nextClaude == previous.claude
 
         return QuotaWidgetSnapshot(
@@ -176,8 +187,16 @@ struct QuotaProductSnapshot: Codable, Equatable {
     let errorMessage: String?
     let lastUpdated: Date?
 
-    func preservingLastKnownValues(from previous: QuotaProductSnapshot) -> QuotaProductSnapshot {
+    func isStale(at date: Date) -> Bool {
+        guard let lastUpdated else { return false }
+        return date.timeIntervalSince(lastUpdated) > QuotaWidgetSnapshot.staleAfter
+    }
+
+    func preservingLastKnownValues(from previous: QuotaProductSnapshot, now: Date = Date()) -> QuotaProductSnapshot {
         guard shouldPreservePreviousValues else { return self }
+        // Keep a prior reading only while its source data is still recent enough to be useful.
+        guard let previousLastUpdated = previous.lastUpdated,
+              now.timeIntervalSince(previousLastUpdated) <= QuotaWidgetSnapshot.maxPreservedValueAge else { return self }
         return QuotaProductSnapshot(
             product: product,
             shortTitle: shortTitle,

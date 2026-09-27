@@ -39,6 +39,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsStore.applyStartup()
         codexUsageService.startPolling()
         claudeUsageService.startPolling()
+        observeSystemWake()
+    }
+
+    /// Timers don't fire while the Mac sleeps, so without this the first reading
+    /// after wake can be stale (showing e.g. 99% when the limit has fully reset).
+    private func observeSystemWake() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(systemDidWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func systemDidWake() {
+        // Small delay so the network is back before the WebView reloads.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            self?.codexUsageService.refresh(force: true)
+            self?.claudeUsageService.refresh(force: true)
+        }
     }
 
     private func setupStatusItem() {
@@ -148,19 +168,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortTitle: String,
         weeklyTitle: String
     ) -> QuotaProductSnapshot {
-        QuotaProductSnapshot(
+        let lastUpdated = service.lastUpdated
+        let hasRecentData = lastUpdated.map {
+            Date().timeIntervalSince($0) <= QuotaWidgetSnapshot.maxPreservedValueAge
+        } ?? false
+        let shortLimit: QuotaLimitSnapshot?
+        if hasRecentData, let limit = service.fiveHourLimit {
+            shortLimit = QuotaLimitSnapshot(percentRemaining: limit.percentRemaining, resetText: limit.resetText)
+        } else {
+            shortLimit = nil
+        }
+        let weeklyLimit: QuotaLimitSnapshot?
+        if hasRecentData, let limit = service.weeklyLimit {
+            weeklyLimit = QuotaLimitSnapshot(percentRemaining: limit.percentRemaining, resetText: limit.resetText)
+        } else {
+            weeklyLimit = nil
+        }
+
+        return QuotaProductSnapshot(
             product: product,
             shortTitle: shortTitle,
             weeklyTitle: weeklyTitle,
-            shortLimit: service.fiveHourLimit.map { limit in
-                QuotaLimitSnapshot(percentRemaining: limit.percentRemaining, resetText: limit.resetText)
-            },
-            weeklyLimit: service.weeklyLimit.map { limit in
-                QuotaLimitSnapshot(percentRemaining: limit.percentRemaining, resetText: limit.resetText)
-            },
+            shortLimit: shortLimit,
+            weeklyLimit: weeklyLimit,
             authState: widgetAuthState(for: service.authState),
             errorMessage: service.errorMessage,
-            lastUpdated: service.lastUpdated
+            lastUpdated: lastUpdated
         )
     }
 

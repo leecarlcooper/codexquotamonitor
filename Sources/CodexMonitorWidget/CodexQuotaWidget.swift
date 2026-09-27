@@ -61,7 +61,9 @@ private struct QuotaWidgetView: View {
             SmallQuotaWidget(
                 product: selectedProduct,
                 date: entry.date,
-                isFullColor: isFullColor
+                isFullColor: isFullColor,
+                isStale: selectedProduct.isStale(at: entry.date),
+                updatedAt: selectedProduct.lastUpdated
             )
         case .systemLarge:
             LargeQuotaWidget(
@@ -101,9 +103,7 @@ private struct MediumQuotaWidget: View {
 
             HStack {
                 Spacer()
-                Text("Updated \(snapshot.savedAt.formatted(date: .omitted, time: .shortened))")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.secondary)
+                UpdatedFooter(updatedAt: snapshot.latestUpdatedAt, now: date, isStale: false)
             }
         }
         .padding(14)
@@ -114,10 +114,12 @@ private struct SmallQuotaWidget: View {
     let product: QuotaProductSnapshot
     let date: Date
     let isFullColor: Bool
+    let isStale: Bool
+    let updatedAt: Date?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ProductHeader(product: product.product, isFullColor: isFullColor)
+            ProductHeader(product: product.product, isFullColor: isFullColor, isStale: isStale)
             QuotaMetricView(
                 title: product.shortTitle,
                 limit: product.shortLimit,
@@ -125,7 +127,8 @@ private struct SmallQuotaWidget: View {
                 date: date,
                 referenceDate: product.lastUpdated,
                 palette: product.palette,
-                isFullColor: isFullColor
+                isFullColor: isFullColor,
+                isStale: isStale
             )
             QuotaMetricView(
                 title: product.weeklyTitle,
@@ -134,8 +137,12 @@ private struct SmallQuotaWidget: View {
                 date: date,
                 referenceDate: product.lastUpdated,
                 palette: product.palette,
-                isFullColor: isFullColor
+                isFullColor: isFullColor,
+                isStale: isStale
             )
+            if isStale {
+                UpdatedFooter(updatedAt: updatedAt, now: date, isStale: true)
+            }
             Spacer(minLength: 0)
         }
         .padding(14)
@@ -154,9 +161,7 @@ private struct LargeQuotaWidget: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.primary)
                 Spacer()
-                Text("Updated \(snapshot.savedAt.formatted(date: .omitted, time: .shortened))")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
+                UpdatedFooter(updatedAt: snapshot.latestUpdatedAt, now: date, isStale: false)
             }
 
             VStack(alignment: .leading, spacing: 12) {
@@ -174,10 +179,13 @@ private struct ProductQuotaRow: View {
     let product: QuotaProductSnapshot
     let date: Date
     let isFullColor: Bool
+    private var isStale: Bool {
+        product.isStale(at: date)
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            ProductHeader(product: product.product, isFullColor: isFullColor)
+            ProductHeader(product: product.product, isFullColor: isFullColor, isStale: isStale)
                 .frame(width: 74, alignment: .leading)
 
             QuotaMetricView(
@@ -187,7 +195,8 @@ private struct ProductQuotaRow: View {
                 date: date,
                 referenceDate: product.lastUpdated,
                 palette: product.palette,
-                isFullColor: isFullColor
+                isFullColor: isFullColor,
+                isStale: isStale
             )
 
             QuotaMetricView(
@@ -197,7 +206,8 @@ private struct ProductQuotaRow: View {
                 date: date,
                 referenceDate: product.lastUpdated,
                 palette: product.palette,
-                isFullColor: isFullColor
+                isFullColor: isFullColor,
+                isStale: isStale
             )
         }
     }
@@ -206,6 +216,7 @@ private struct ProductQuotaRow: View {
 private struct ProductHeader: View {
     let product: QuotaProduct
     let isFullColor: Bool
+    var isStale: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -213,11 +224,18 @@ private struct ProductHeader: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(identityColor)
                 .widgetAccentable()
-            Text(product.displayName)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+            HStack(spacing: 3) {
+                Text(product.displayName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                if isStale {
+                    Image(systemName: "clock.badge.exclamationmark")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.orange)
+                }
+            }
         }
     }
 
@@ -237,6 +255,7 @@ private struct QuotaMetricView: View {
     let referenceDate: Date?
     let palette: UsageBarPalette
     let isFullColor: Bool
+    var isStale: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -249,7 +268,7 @@ private struct QuotaMetricView: View {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(percentText)
                     .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(isStale ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                 if isLow {
@@ -262,6 +281,7 @@ private struct QuotaMetricView: View {
 
             QuotaProgressBar(percent: limit?.percentRemaining, palette: palette, isFullColor: isFullColor)
                 .frame(height: 8)
+                .opacity(isStale ? 0.55 : 1)
 
             Text(detailText)
                 .font(.system(size: 9, weight: .medium))
@@ -339,6 +359,37 @@ private struct QuotaProgressBar: View {
             return Color.white.opacity(0.72)
         }
         return Color.white.opacity(0.58)
+    }
+}
+
+private struct UpdatedFooter: View {
+    let updatedAt: Date?
+    let now: Date
+    let isStale: Bool
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if isStale {
+                Image(systemName: "clock.badge.exclamationmark")
+                    .font(.system(size: 8, weight: .semibold))
+            }
+            Text(label)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .font(.system(size: 9, weight: .medium))
+        .foregroundStyle(isStale ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.secondary))
+    }
+
+    private var label: String {
+        guard let updatedAt else { return "Waiting for update" }
+        let time: String
+        if Calendar.current.isDate(updatedAt, inSameDayAs: now) {
+            time = updatedAt.formatted(date: .omitted, time: .shortened)
+        } else {
+            time = updatedAt.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+        }
+        return isStale ? "Stale · \(time)" : "Updated \(time)"
     }
 }
 

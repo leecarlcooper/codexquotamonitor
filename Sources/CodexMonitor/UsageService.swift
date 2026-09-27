@@ -287,14 +287,18 @@ private extension UsageService {
         return str.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
       }
 
+      function roundPercent(raw) {
+        return Math.round(parseFloat(String(raw).replace(',', '.')));
+      }
+
       function extractPercentAndMetric(text) {
-        const afterMatch = text.match(/\\b(\\d+)\\s*%\\s*[()\\s:,-]*\\s*(remaining|used)\\b/i);
+        const afterMatch = text.match(/\\b(\\d+(?:[.,]\\d+)?)\\s*%\\s*[()\\s:,-]*\\s*(remaining|used)\\b/i);
         if (afterMatch) {
-          return { percent: parseInt(afterMatch[1], 10), metric: afterMatch[2].toLowerCase() };
+          return { percent: roundPercent(afterMatch[1]), metric: afterMatch[2].toLowerCase() };
         }
-        const beforeMatch = text.match(/\\b(remaining|used)\\b\\s*[()\\s:,-]*\\s*(\\d+)\\s*%\\b/i);
+        const beforeMatch = text.match(/\\b(remaining|used)\\b\\s*[()\\s:,-]*\\s*(\\d+(?:[.,]\\d+)?)\\s*%/i);
         if (beforeMatch) {
-          return { percent: parseInt(beforeMatch[2], 10), metric: beforeMatch[1].toLowerCase() };
+          return { percent: roundPercent(beforeMatch[2]), metric: beforeMatch[1].toLowerCase() };
         }
         return null;
       }
@@ -313,7 +317,7 @@ private extension UsageService {
       function isCardText(text, label, otherLabels) {
         const lower = text.toLowerCase();
         if (!lower.includes(label)) return false;
-        if (!/\\\\d+\\\\s*%/.test(lower)) return false;
+        if (!/\\d+\\s*%/.test(lower)) return false;
         if (!lower.includes('remaining') && !lower.includes('used')) return false;
         for (const other of otherLabels) {
           if (lower.includes(other)) return false;
@@ -321,26 +325,41 @@ private extension UsageService {
         return true;
       }
 
+      function hasResetText(text) {
+        return /\\bresets?\\b/i.test(text);
+      }
+
       function findCardText(label, otherLabels) {
         const elements = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,div,span,p'));
         const labelLower = label.toLowerCase();
         let best = null;
+        let bestWithReset = null;
         for (const el of elements) {
           const text = (el.textContent || '').toLowerCase();
           if (!text.includes(labelLower)) continue;
           let node = el;
+          let candidate = null;
           while (node) {
             const nodeText = node.innerText || '';
             if (isCardText(nodeText, labelLower, otherLabels)) {
-              if (!best || nodeText.length < best.length) {
-                best = nodeText;
-              }
+              candidate = nodeText;
+              // Keep expanding to ancestors until the card's reset line is included.
+              // isCardText stops the expansion before another card's text bleeds in.
+              if (hasResetText(nodeText)) break;
+            } else if (candidate) {
               break;
             }
             node = node.parentElement;
           }
+          if (!candidate) continue;
+          if (!best || candidate.length < best.length) {
+            best = candidate;
+          }
+          if (hasResetText(candidate) && (!bestWithReset || candidate.length < bestWithReset.length)) {
+            bestWithReset = candidate;
+          }
         }
-        return best;
+        return bestWithReset || best;
       }
 
       function extractResetTextFromLines(lines) {
@@ -370,13 +389,13 @@ private extension UsageService {
           const labelIndex = cardText.toLowerCase().indexOf(labelLower);
           const searchText = labelIndex >= 0 ? cardText.slice(labelIndex) : cardText;
           const percentMetricMatch = extractPercentAndMetric(searchText) || extractPercentAndMetric(cardText);
-          const labelRegex = new RegExp(escapeRegExp(label) + \"[\\\\s\\\\S]*?(\\\\d+)\\\\s*%\", \"i\");
-          const percentMatch = cardText.match(labelRegex) || cardText.match(/(\\\\d+)\\\\s*%/);
+          const labelRegex = new RegExp(escapeRegExp(label) + \"[\\\\s\\\\S]*?(\\\\d+(?:[.,]\\\\d+)?)\\\\s*%\", \"i\");
+          const percentMatch = cardText.match(labelRegex) || cardText.match(/(\\d+(?:[.,]\\d+)?)\\s*%/);
           let resetText = '';
           const lines = cardText.split(/\\n+/).map(line => line.trim()).filter(Boolean);
           resetText = extractResetTextFromLines(lines);
           if (!resetText) {
-            const resetMatch = cardText.match(/(?:next\\\\s+)?resets?\\\\b\\\\s*:?\\\\s*([^\\\\n]+)/i);
+            const resetMatch = cardText.match(/(?:next\\s+)?resets?\\b\\s*:?\\s*([^\\n]+)/i);
             resetText = resetMatch ? resetMatch[1].trim() : '';
           }
           if (!resetText) {
@@ -390,7 +409,7 @@ private extension UsageService {
             resetText = fallbackLine ? fallbackLine.trim() : '';
           }
           if (percentMetricMatch || percentMatch) {
-            const rawPercent = percentMetricMatch ? percentMetricMatch.percent : parseInt(percentMatch[1], 10);
+            const rawPercent = percentMetricMatch ? percentMetricMatch.percent : roundPercent(percentMatch[1]);
             const metric = percentMetricMatch ? percentMetricMatch.metric : metricForPercent(cardText, rawPercent);
             return {
               percent: rawPercent,
@@ -408,7 +427,9 @@ private extension UsageService {
         for (const label of labelVariants) {
           const labelLower = label.toLowerCase();
           for (let i = 0; i < lines.length; i++) {
-            if (!lines[i].toLowerCase().includes(labelLower)) continue;
+            const lineLower = lines[i].toLowerCase();
+            if (!lineLower.includes(labelLower)) continue;
+            if (otherLabelLowers.some(other => lineLower.includes(other))) continue;
             let percentLine = null;
             let percentIndex = null;
             let resetLine = null;
@@ -432,9 +453,9 @@ private extension UsageService {
             }
             if (percentLine) {
               const percentMetricMatch = extractPercentAndMetric(percentLine);
-              const percentOnlyMatch = percentMetricMatch ? null : percentLine.match(/(\\d+)\\s*%/);
+              const percentOnlyMatch = percentMetricMatch ? null : percentLine.match(/(\\d+(?:[.,]\\d+)?)\\s*%/);
               if (percentMetricMatch || percentOnlyMatch) {
-                const rawPercent = percentMetricMatch ? percentMetricMatch.percent : parseInt(percentOnlyMatch[1], 10);
+                const rawPercent = percentMetricMatch ? percentMetricMatch.percent : roundPercent(percentOnlyMatch[1]);
                 let resetText = '';
                 if (resetLine) {
                   resetText = extractResetTextFromLines([resetLine]);
@@ -463,13 +484,24 @@ private extension UsageService {
         'weekly limit',
         'weekly limits'
       ];
+      // Model-specific cards (e.g. \"GPT-5.3-Codex-Spark 5 hour usage limit\") repeat the
+      // generic labels, so exclude them to keep the primary account limits.
+      const excludedLabels = ['spark', 'code review'];
 
-      const fiveHour = extract(fiveHourLabels, weeklyLabels);
-      const weekly = extract(weeklyLabels, fiveHourLabels);
+      const fiveHour = extract(fiveHourLabels, weeklyLabels.concat(excludedLabels));
+      const weekly = extract(weeklyLabels, fiveHourLabels.concat(excludedLabels));
+
+      // The card extractor can find percent but miss the reset line (it lives outside
+      // the matched node on some layouts); borrow resetText from the line-based parser.
+      function withResetFallback(primary, fallback) {
+        if (!primary) return fallback;
+        if (primary.resetText || !fallback || !fallback.resetText) return primary;
+        return { percent: primary.percent, metric: primary.metric || fallback.metric, resetText: fallback.resetText };
+      }
 
       const bodyText = document.body ? (document.body.innerText || '') : '';
-      const fiveHourFallback = fiveHour || extractByLines(bodyText, fiveHourLabels, weeklyLabels);
-      const weeklyFallback = weekly || extractByLines(bodyText, weeklyLabels, fiveHourLabels);
+      const fiveHourFallback = withResetFallback(fiveHour, extractByLines(bodyText, fiveHourLabels, weeklyLabels.concat(excludedLabels)));
+      const weeklyFallback = withResetFallback(weekly, extractByLines(bodyText, weeklyLabels, fiveHourLabels.concat(excludedLabels)));
 
       const hasUsage = !!(fiveHourFallback || weeklyFallback);
       let authHint = null;
