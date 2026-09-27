@@ -26,6 +26,8 @@
 		E7EBB1826A5055B358040094 /* PopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A48A70B031B784A21977862 /* PopoverView.swift */; };
 		F1063ABD3E58DDCB42847987 /* QuotaWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3D7B1D575370A4A8CAD049F /* QuotaWidgetSnapshot.swift */; };
 		FEF8407BF5583CA636C7E9AB /* MenuBarIconRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62644EDFB2EBC756FAEBF36 /* MenuBarIconRenderer.swift */; };
+		A94EABE53FAE09858B0EA8D6 /* CodexRateLimitsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE19DD20976E893515D77C49 /* CodexRateLimitsClient.swift */; };
+		1DF8C57F82F72EA2DBC594F8 /* QuotaStatusSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5181E557AA2AF7187A82B0CA /* QuotaStatusSnapshot.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -70,6 +72,8 @@
 		E62644EDFB2EBC756FAEBF36 /* MenuBarIconRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarIconRenderer.swift; sourceTree = "<group>"; };
 		F9332276399AA78C78173490 /* LoginWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginWindowController.swift; sourceTree = "<group>"; };
 		FF5E42F798818C1EA17C6632 /* CodexMonitorWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CodexMonitorWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		CE19DD20976E893515D77C49 /* CodexRateLimitsClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexRateLimitsClient.swift; sourceTree = "<group>"; };
+		5181E557AA2AF7187A82B0CA /* QuotaStatusSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaStatusSnapshot.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -114,6 +118,8 @@
 				3FCD41CC7CCB7496FC87233F /* EventMonitor.swift */,
 				0D5B42FB19C4212AB84476A3 /* LoginItemManager.swift */,
 				F9332276399AA78C78173490 /* LoginWindowController.swift */,
+				CE19DD20976E893515D77C49 /* CodexRateLimitsClient.swift */,
+				5181E557AA2AF7187A82B0CA /* QuotaStatusSnapshot.swift */,
 				60B866E4FB9FEA25E71FB16E /* Main.swift */,
 				E62644EDFB2EBC756FAEBF36 /* MenuBarIconRenderer.swift */,
 				2A48A70B031B784A21977862 /* PopoverView.swift */,
@@ -213,6 +219,8 @@
 				D42B879FBDBE6DAEA50F80A5 /* EventMonitor.swift in Sources */,
 				752121C8B126FCFB43146FD0 /* LoginItemManager.swift in Sources */,
 				BD3FE89E14ABBFB657F3063A /* LoginWindowController.swift in Sources */,
+				A94EABE53FAE09858B0EA8D6 /* CodexRateLimitsClient.swift in Sources */,
+				1DF8C57F82F72EA2DBC594F8 /* QuotaStatusSnapshot.swift in Sources */,
 				C6B7BF4599B9DF75FE4CA1A3 /* Main.swift in Sources */,
 				FEF8407BF5583CA636C7E9AB /* MenuBarIconRenderer.swift in Sources */,
 				E7EBB1826A5055B358040094 /* PopoverView.swift in Sources */,

@@ -184,8 +184,8 @@ struct QuotaProductSnapshot: Codable, Equatable {
             weeklyTitle: weeklyTitle,
             shortLimit: previous.shortLimit,
             weeklyLimit: previous.weeklyLimit,
-            authState: previous.authState,
-            errorMessage: previous.errorMessage,
+            authState: authState,
+            errorMessage: errorMessage,
             lastUpdated: previous.lastUpdated
         )
     }

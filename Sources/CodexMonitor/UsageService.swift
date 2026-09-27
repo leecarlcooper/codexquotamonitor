@@ -58,6 +58,10 @@ final class UsageService: NSObject, ObservableObject {
     }
 
     private(set) var webView: WKWebView
+    private let codexClient = CodexRateLimitsClient()
+    private var generation = 0
+    private var codexPaused = UserDefaults.standard.bool(forKey: "codexMonitoringPaused")
+    var usesCodexAccount: Bool { configuration.productName == "Codex" }
     private var timer: Timer?
     private var isLoading = false
     private var parseAttempts = 0
@@ -74,6 +78,12 @@ final class UsageService: NSObject, ObservableObject {
     }
 
     func resetForLogout() {
+        generation += 1
+        codexClient.cancel()
+        if usesCodexAccount {
+            codexPaused = true
+            UserDefaults.standard.set(true, forKey: "codexMonitoringPaused")
+        }
         endInteractiveSession()
         webView.stopLoading()
         isLoading = false
@@ -97,6 +107,11 @@ final class UsageService: NSObject, ObservableObject {
     func refresh(force: Bool = false) {
         guard !isLoading else { return }
         if isInteractiveSession && !force { return }
+        if usesCodexAccount {
+            refreshCodexAccount()
+            return
+        }
+        generation += 1
         isLoading = true
         parseAttempts = 0
         let request = URLRequest(url: configuration.usageURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
@@ -105,7 +120,42 @@ final class UsageService: NSObject, ObservableObject {
         }
     }
 
+    func resumeCodexAccount() {
+        codexPaused = false
+        UserDefaults.standard.set(false, forKey: "codexMonitoringPaused")
+        refresh(force: true)
+    }
+
+    private func refreshCodexAccount() {
+        guard !codexPaused else {
+            authState = .needsLogin
+            errorMessage = "Codex monitoring disconnected. Click Connect Codex to resume."
+            return
+        }
+        isLoading = true
+        codexClient.fetch { [weak self] result in
+            guard let self else { return }
+            self.isLoading = false
+            switch result {
+            case .success(let response):
+                guard let limits = response.limits else { return }
+                self.fiveHourLimit = limits.fiveHour
+                self.weeklyLimit = limits.weekly
+                self.authState = .authenticated
+                self.lastUpdated = Date()
+                self.errorMessage = nil
+            case .failure(let error):
+                // Keep last-known data and its original timestamp on transient failures.
+                self.recordTransientError(error.localizedDescription)
+            }
+        }
+    }
+
     func pollCurrentPage() {
+        if usesCodexAccount {
+            if lastUpdated.map({ Date().timeIntervalSince($0) > 60 }) ?? true { refresh() }
+            return
+        }
         guard !isLoading else { return }
         isLoading = true
         parseAttempts = 0
@@ -121,7 +171,7 @@ final class UsageService: NSObject, ObservableObject {
     }
 
     private func handleParseResult(_ result: Any?) {
-        defer { isLoading = false }
+        isLoading = false
         guard let jsonString = result as? String, let data = jsonString.data(using: .utf8) else {
             recordTransientError("Unable to parse usage")
             return
@@ -153,8 +203,10 @@ final class UsageService: NSObject, ObservableObject {
                 if parseAttempts < maxParseAttempts {
                     parseAttempts += 1
                     isLoading = true
+                    let currentGeneration = generation
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                        self?.attemptParse()
+                        guard let self, self.generation == currentGeneration else { return }
+                        self.attemptParse()
                     }
                     return
                 }
@@ -177,7 +229,10 @@ final class UsageService: NSObject, ObservableObject {
     }
 
     private func attemptParse() {
+        guard !usesCodexAccount else { return }
+        let currentGeneration = generation
         webView.evaluateJavaScript(Self.parserScript) { [weak self] result, error in
+            guard self?.generation == currentGeneration else { return }
             if let error {
                 self?.recordTransientError(error.localizedDescription)
                 self?.isLoading = false

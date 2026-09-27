@@ -19,14 +19,14 @@
 - Keep UI logic in view/controller files and parsing/network logic in services.
 
 ## Testing Guidelines
-- No automated tests are present yet. If you add tests, create a `Tests/CodexMonitorTests/` XCTest target and run them with `swift test`.
-- Prioritize unit tests for the usage-page parser in `UsageService.swift`, since DOM changes are the most likely regression.
+- Run the XCTest target in `Tests/CodexMonitorTests/` with `swift test`.
+- Cover Codex protocol/response handling in `CodexRateLimitsClient.swift` and the Claude usage-page parser in `UsageService.swift`.
 
 ## Commit & Pull Request Guidelines
 - Commit messages are short, imperative, and single-line (e.g., “Update usage UI and refresh docs”).
 - PRs should include: a brief description of what/why, testing notes (or “Not tested”), and screenshots for UI changes. Link issues if applicable.
 
 ## Configuration & Maintenance Notes
-- The app scrapes `https://chatgpt.com/codex/settings/usage`; if the DOM changes, update the parsing logic in `Sources/CodexMonitor/UsageService.swift`.
+- Codex uses `codex app-server` and `account/rateLimits/read` with the existing CLI ChatGPT account. Claude still uses the WebKit DOM parser in `UsageService.swift`.
 - Minimum deployment target is macOS 13 (set in `Package.swift`).
-- Avoid committing credentials or session data; authentication is handled via WebKit’s data store at runtime.
+- Avoid committing credentials or session data; Codex owns its CLI authentication and Claude uses WebKit’s data store. Preserve the local `quota-status.json` export for companion apps.

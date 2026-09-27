@@ -1,43 +1,54 @@
 # CodexMonitor (macOS menu bar)
 
-A lightweight menu bar app that polls the Codex usage page every 5 minutes and shows remaining 5‑hour and weekly limits with a reset countdown.
+A macOS menu bar app showing remaining Codex and Claude five-hour/session and weekly limits, with reset countdowns and a desktop widget.
 
 ## Requirements
 
-- macOS 13+
-- Swift 5.9 (Xcode 15+)
+- macOS 13+ for the app; macOS 14+ for the widget
+- Swift 5.9+ and Xcode for building
+- A current Codex CLI signed into a ChatGPT account (`codex login`) for Codex usage
 
-## Run (local)
+## Run and build
 
 ```bash
 swift run
-```
-
-This launches the menu bar app (no Dock icon). Use the menu bar icon to open the popover.
-
-## Build app bundle
-
-```bash
+swift test
 scripts/build_app.sh
-```
-
-To install into `/Applications` and open it:
-
-```bash
 scripts/build_app.sh --install
 ```
 
-## Sign in
+The bundle build includes the desktop widget. If XcodeGen is installed, the build script regenerates the Xcode project from `project.yml`; otherwise it uses the checked-in project. Quit the running monitor before installing a replacement.
 
-Click **Open Sign In** in the popover to log in via the embedded browser window. Cookies are stored in the app’s WebKit data store.
+## Connect accounts
 
-## Notes
+**Codex:** The monitor uses the existing Codex CLI account through the documented [Codex app-server protocol](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt), calling `account/rateLimits/read`. Run `codex login` in Terminal, sign in with ChatGPT, then click Refresh. API-key-only accounts do not supply ChatGPT subscription limits. The monitor discovers Codex in Homebrew locations, `~/.npm-global/bin`, the Codex app bundle, or PATH. It never reads, copies, or logs authentication tokens. It uses the CLI account, which can differ from your browser account.
 
-- Data source: `https://chatgpt.com/codex/settings/usage`
-- Polling interval: 5 minutes
-- Menu bar icon shows two stacked bars (5‑hour on top, weekly on bottom) with green/yellow/red warnings based on remaining % (green ≥26%, yellow 15–25%, red <15%)
-- Usage cards show the percent remaining plus a “Resets in …” countdown parsed from the usage dashboard
-- Popover usage bars use the same color thresholds as the menu bar icon via `UsageBarStyle`
-- Launch at login is enabled by default when running from a bundled app in `/Applications` (toggle in the popover).
+**Claude:** Click Open Claude Sign In and authenticate in the embedded browser. Cookies remain in the app's WebKit data store. Claude usage is still read from `https://claude.ai/settings/usage`.
 
-If the page’s DOM changes, update the JS parser in `Sources/CodexMonitor/UsageService.swift`.
+**Disconnect** pauses Codex monitoring persistently and clears the monitor's browser sessions. It does not sign the Codex CLI or desktop app out. Click Connect Codex to resume monitoring.
+
+## Reliability and troubleshooting
+
+- Polls every five minutes; Refresh fetches immediately. Opening the popover also refreshes Codex data older than one minute.
+- Codex usage is structured data, independent of dashboard HTML, labels, or WebKit login cookies. Only the `codex` bucket and windows of 300/10080 minutes populate the two cards; unrelated model buckets are never substituted.
+- Requests time out after 30 seconds and terminate their child process. Errors retain the last successful values and timestamp and display a warning instead of treating cached values as a new reading.
+- If usage is unavailable, update Codex CLI, check your network, run `codex login`, and Refresh. No API key is needed.
+- Reset timestamps are absolute, so countdowns remain correct as the snapshot ages.
+- The Codex title opens `https://chatgpt.com/codex/settings/usage` for manual inspection; that page is no longer scraped for Codex data.
+- Menu bar bars show five-hour usage above weekly usage. Green means at least 26% remaining, yellow 15–25%, red below 15%.
+- Launch at login is enabled by default for bundles installed in `/Applications`.
+
+## Local integrations
+
+The app preserves the MiniToo-compatible snapshot at `~/Library/Application Support/CodexMonitor/quota-status.json`. It contains remaining percentages, reset text, an additive ISO-8601 `resetAt` field for Codex limits, authentication state, last successful update, and any error. Consumers should check the timestamp and error before displaying data as current.
+
+```bash
+/Applications/CodexMonitor.app/Contents/MacOS/CodexMonitor --quota-status
+/Applications/CodexMonitor.app/Contents/MacOS/CodexMonitor --quota-status-path
+```
+
+These commands read the saved snapshot; they do not fetch fresh usage. Widget snapshots are published separately.
+
+## Development
+
+`CodexRateLimitsClient.swift` owns Codex process/protocol handling and response decoding. `UsageService.swift` owns polling state and the Claude DOM parser. `swift test` covers bucket/window selection, percentages, timestamps, fragmented protocol responses, unavailable executables, timeouts, early process exit, companion export compatibility, and widget error preservation.

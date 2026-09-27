@@ -57,7 +57,7 @@ struct PopoverView: View {
     private var content: some View {
         usageContent(
             for: usageService,
-            signInLabel: "Open Codex Sign In",
+            signInLabel: "Connect Codex",
             signInAction: onSignIn,
             titles: ("5 hour limit", "Weekly limit"),
             palette: .codex
@@ -95,7 +95,7 @@ struct PopoverView: View {
     ) -> some View {
         if service.authState == .needsLogin {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Sign in to view limits")
+                Text(service.usesCodexAccount ? "Connect Codex to view limits" : "Sign in to view limits")
                     .font(.system(size: 14, weight: .medium))
                 Button(action: signInAction) {
                     Text(signInLabel)
@@ -108,7 +108,7 @@ struct PopoverView: View {
             }
         } else if service.fiveHourLimit == nil && service.weeklyLimit == nil {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Loading usage…")
+                Text(service.errorMessage == nil ? "Loading usage…" : "Usage unavailable")
                     .font(.system(size: 14, weight: .medium))
                 Button(action: signInAction) {
                     Text(signInLabel)
@@ -168,7 +168,7 @@ struct PopoverView: View {
                     .foregroundColor(.secondary)
             }
             Spacer()
-            Button("Log out") {
+            Button("Disconnect") {
                 onLogout()
             }
             .buttonStyle(.plain)

@@ -10,6 +10,9 @@ enum ResetCountdownFormatter {
         let trimmed = resetText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
+        if let date = ISO8601DateFormatter().date(from: trimmed) {
+            return format(interval: date.timeIntervalSince(now))
+        }
         let normalized = normalize(trimmed)
         if let interval = parseInterval(from: normalized, now: now, referenceDate: referenceDate, calendar: calendar) {
             return format(interval: interval)

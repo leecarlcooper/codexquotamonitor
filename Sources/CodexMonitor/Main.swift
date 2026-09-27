@@ -8,6 +8,10 @@ import WidgetKit
 @main
 struct CodexMonitorMain {
     static func main() {
+        if let exitCode = QuotaStatusCommand.runIfRequested() {
+            exit(exitCode)
+        }
+
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -23,8 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let codexUsageService = UsageService(configuration: .codex)
     private let claudeUsageService = UsageService(configuration: .claude)
     private let settingsStore = SettingsStore()
+    private let quotaStatusStore = QuotaStatusStore.shared
     private var cancellables: Set<AnyCancellable> = []
-    private var codexLoginWindowController: LoginWindowController?
     private var claudeLoginWindowController: LoginWindowController?
     private var isLoggingOut = false
 
@@ -76,20 +80,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func bindUsageUpdates() {
-        let codexPublisher = codexUsageService.$fiveHourLimit
-            .combineLatest(codexUsageService.$weeklyLimit, codexUsageService.$authState)
-        let claudePublisher = claudeUsageService.$fiveHourLimit
-            .combineLatest(claudeUsageService.$weeklyLimit, claudeUsageService.$authState)
+        let codexPublisher = usageStatusPublisher(for: codexUsageService)
+        let claudePublisher = usageStatusPublisher(for: claudeUsageService)
 
         settingsStore.$selectedUsageSource
-            .combineLatest(codexPublisher, claudePublisher)
+            .combineLatest(codexPublisher)
+            .combineLatest(claudePublisher)
             .receive(on: RunLoop.main)
-            .sink { [weak self] selection, codex, claude in
+            .sink { [weak self] selectionAndCodex, claude in
                 guard let self else { return }
                 self.publishWidgetSnapshot()
+                let (selection, codex) = selectionAndCodex
                 switch selection {
                 case .codex:
-                    let (five, weekly, authState) = codex
+                    let (five, weekly, authState, _, _) = codex
                     let signedIn = authState == .authenticated
                     self.statusItem.button?.image = MenuBarIconRenderer.render(
                         fiveHourPercent: five?.percentRemaining,
@@ -99,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     )
                     self.statusItem.button?.toolTip = self.codexUsageService.statusSummary
                 case .claude:
-                    let (five, weekly, authState) = claude
+                    let (five, weekly, authState, _, _) = claude
                     let signedIn = authState == .authenticated
                     self.statusItem.button?.image = MenuBarIconRenderer.render(
                         fiveHourPercent: five?.percentRemaining,
@@ -109,6 +113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     )
                     self.statusItem.button?.toolTip = self.claudeUsageService.statusSummary
                 }
+
+                self.writeQuotaStatusSnapshot()
             }
             .store(in: &cancellables)
     }
@@ -178,6 +184,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func usageStatusPublisher(
+        for service: UsageService
+    ) -> AnyPublisher<(UsageLimit?, UsageLimit?, UsageService.AuthState, Date?, String?), Never> {
+        Publishers.CombineLatest4(
+            service.$fiveHourLimit,
+            service.$weeklyLimit,
+            service.$authState,
+            service.$lastUpdated
+        )
+        .combineLatest(service.$errorMessage)
+        .map { state, errorMessage in
+            (state.0, state.1, state.2, state.3, errorMessage)
+        }
+        .eraseToAnyPublisher()
+    }
+
+    private func writeQuotaStatusSnapshot() {
+        let snapshot = QuotaStatusSnapshot(
+            selectedUsageSource: settingsStore.selectedUsageSource,
+            codexService: codexUsageService,
+            claudeService: claudeUsageService
+        )
+
+        do {
+            try quotaStatusStore.write(snapshot)
+        } catch {
+            NSLog("Failed to write quota status snapshot: \(error.localizedDescription)")
+        }
+    }
+
     @objc private func togglePopover() {
         if popover.isShown {
             closePopover()
@@ -200,25 +236,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showCodexLoginWindow() {
-        if codexLoginWindowController == nil {
-            codexUsageService.beginInteractiveSession()
-            codexLoginWindowController = LoginWindowController(
-                webView: codexUsageService.webView,
-                url: codexUsageService.usageURL,
-                title: codexUsageService.loginWindowTitle,
-                onClose: { [weak self] in
-                    guard let self else { return }
-                    self.codexLoginWindowController = nil
-                    self.codexUsageService.endInteractiveSession()
-                    if !self.isLoggingOut {
-                        self.codexUsageService.refresh(force: true)
-                    }
-                }
-            )
+        codexUsageService.resumeCodexAccount()
+        if codexUsageService.authState != .authenticated {
+            let alert = NSAlert()
+            alert.messageText = "Connect your Codex account"
+            alert.informativeText = "This monitor uses your Codex CLI ChatGPT account. Install Codex CLI if needed, run codex login in Terminal, then click Refresh. No API key is needed."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         }
-        codexLoginWindowController?.showWindow(nil)
-        codexLoginWindowController?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func showClaudeLoginWindow() {
@@ -250,9 +275,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         codexUsageService.resetForLogout()
         claudeUsageService.resetForLogout()
 
-        codexLoginWindowController?.close()
         claudeLoginWindowController?.close()
-        codexLoginWindowController = nil
         claudeLoginWindowController = nil
 
         WebViewFactory.clearWebsiteData { [weak self] in
