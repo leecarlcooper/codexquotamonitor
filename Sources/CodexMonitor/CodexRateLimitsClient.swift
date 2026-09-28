@@ -55,6 +55,7 @@ final class CodexRateLimitsClient {
 
     static var executableURL: URL? {
         let paths = ["/opt/homebrew/bin/codex", "/usr/local/bin/codex",
+                     NSHomeDirectory() + "/.local/bin/codex",
                      NSHomeDirectory() + "/.npm-global/bin/codex",
                      "/Applications/Codex.app/Contents/Resources/codex"]
             + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { String($0) + "/codex" }

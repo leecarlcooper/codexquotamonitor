@@ -21,7 +21,7 @@ The bundle build includes the desktop widget. If XcodeGen is installed, the buil
 
 ## Connect accounts
 
-**Codex:** The monitor uses the existing Codex CLI account through the documented [Codex app-server protocol](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt), calling `account/rateLimits/read`. Run `codex login` in Terminal, sign in with ChatGPT, then click Refresh. API-key-only accounts do not supply ChatGPT subscription limits. The monitor discovers Codex in Homebrew locations, `~/.npm-global/bin`, the Codex app bundle, or PATH. It never reads, copies, or logs authentication tokens. It uses the CLI account, which can differ from your browser account.
+**Codex:** The monitor uses the existing Codex CLI account through the documented [Codex app-server protocol](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt), calling `account/rateLimits/read`. Run `codex login` in Terminal, sign in with ChatGPT, then click Refresh. API-key-only accounts do not supply ChatGPT subscription limits. The monitor discovers Codex in Homebrew locations, `~/.local/bin`, `~/.npm-global/bin`, the Codex app bundle, or PATH. It never reads, copies, or logs authentication tokens. It uses the CLI account, which can differ from your browser account.
 
 **Claude:** Click Open Claude Sign In and authenticate in the embedded browser. Cookies remain in the app's WebKit data store. Claude usage is still read from `https://claude.ai/settings/usage`.
 
