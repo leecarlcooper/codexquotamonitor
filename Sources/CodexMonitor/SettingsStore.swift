@@ -60,4 +60,5 @@ final class SettingsStore: ObservableObject {
 enum UsageSource: String, CaseIterable {
     case codex
     case claude
+    case cursor
 }

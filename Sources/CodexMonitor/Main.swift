@@ -26,10 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventMonitor: EventMonitor?
     private let codexUsageService = UsageService(configuration: .codex)
     private let claudeUsageService = UsageService(configuration: .claude)
+    private let cursorUsageService = UsageService(configuration: .cursor)
     private let settingsStore = SettingsStore()
     private let quotaStatusStore = QuotaStatusStore.shared
     private var cancellables: Set<AnyCancellable> = []
     private var claudeLoginWindowController: LoginWindowController?
+    private var cursorLoginWindowController: LoginWindowController?
     private var isLoggingOut = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -39,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsStore.applyStartup()
         codexUsageService.startPolling()
         claudeUsageService.startPolling()
+        cursorUsageService.startPolling()
         observeSystemWake()
     }
 
@@ -58,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             self?.codexUsageService.refresh(force: true)
             self?.claudeUsageService.refresh(force: true)
+            self?.cursorUsageService.refresh(force: true)
         }
     }
 
@@ -74,17 +78,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupPopover() {
         popover.behavior = .transient
         popover.animates = true
-        popover.contentSize = NSSize(width: 340, height: 700)
+        popover.contentSize = NSSize(width: 380, height: 700)
 
         let view = PopoverView(
             usageService: codexUsageService,
             claudeUsageService: claudeUsageService,
+            cursorUsageService: cursorUsageService,
             settings: settingsStore,
             onSignIn: { [weak self] in self?.showCodexLoginWindow() },
             onClaudeSignIn: { [weak self] in self?.showClaudeLoginWindow() },
+            onCursorSignIn: { [weak self] in self?.showCursorLoginWindow() },
             onRefresh: { [weak self] in
                 self?.codexUsageService.refresh(force: true)
                 self?.claudeUsageService.refresh(force: true)
+                self?.cursorUsageService.refresh(force: true)
             },
             onLogout: { [weak self] in
                 self?.logoutAllAccounts()
@@ -100,40 +107,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func bindUsageUpdates() {
-        let codexPublisher = usageStatusPublisher(for: codexUsageService)
-        let claudePublisher = usageStatusPublisher(for: claudeUsageService)
-
         settingsStore.$selectedUsageSource
-            .combineLatest(codexPublisher)
-            .combineLatest(claudePublisher)
+            .combineLatest(usageStatusPublisher(for: codexUsageService))
+            .combineLatest(usageStatusPublisher(for: claudeUsageService))
+            .combineLatest(usageStatusPublisher(for: cursorUsageService))
             .receive(on: RunLoop.main)
-            .sink { [weak self] selectionAndCodex, claude in
+            .sink { [weak self] _ in
                 guard let self else { return }
                 self.publishWidgetSnapshot()
-                let (selection, codex) = selectionAndCodex
-                switch selection {
-                case .codex:
-                    let (five, weekly, authState, _, _) = codex
-                    let signedIn = authState == .authenticated
-                    self.statusItem.button?.image = MenuBarIconRenderer.render(
-                        fiveHourPercent: five?.percentRemaining,
-                        weeklyPercent: weekly?.percentRemaining,
-                        signedIn: signedIn,
-                        palette: .codex
-                    )
-                    self.statusItem.button?.toolTip = self.codexUsageService.statusSummary
-                case .claude:
-                    let (five, weekly, authState, _, _) = claude
-                    let signedIn = authState == .authenticated
-                    self.statusItem.button?.image = MenuBarIconRenderer.render(
-                        fiveHourPercent: five?.percentRemaining,
-                        weeklyPercent: weekly?.percentRemaining,
-                        signedIn: signedIn,
-                        palette: .claude
-                    )
-                    self.statusItem.button?.toolTip = self.claudeUsageService.statusSummary
+                let service: UsageService
+                let palette: UsageBarPalette
+                switch self.settingsStore.selectedUsageSource {
+                case .codex: service = self.codexUsageService; palette = .codex
+                case .claude: service = self.claudeUsageService; palette = .claude
+                case .cursor: service = self.cursorUsageService; palette = .cursor
                 }
-
+                self.statusItem.button?.image = MenuBarIconRenderer.render(
+                    fiveHourPercent: service.fiveHourLimit?.percentRemaining,
+                    weeklyPercent: service.weeklyLimit?.percentRemaining,
+                    signedIn: service.authState == .authenticated,
+                    palette: palette
+                )
+                self.statusItem.button?.toolTip = service.statusSummary
                 self.writeQuotaStatusSnapshot()
             }
             .store(in: &cancellables)
@@ -154,6 +149,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 weeklyTitle: "Weekly limits"
             ),
             selectedProduct: selectedQuotaProduct,
+            cursor: makeProductSnapshot(product: .cursor, service: cursorUsageService,
+                                        shortTitle: "Cursor Models", weeklyTitle: "Other Models"),
             savedAt: Date()
         ).preservingLastKnownValues(from: QuotaWidgetStore.load())
         QuotaWidgetStore.save(snapshot)
@@ -174,13 +171,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } ?? false
         let shortLimit: QuotaLimitSnapshot?
         if hasRecentData, let limit = service.fiveHourLimit {
-            shortLimit = QuotaLimitSnapshot(percentRemaining: limit.percentRemaining, resetText: limit.resetText)
+            shortLimit = QuotaLimitSnapshot(percentRemaining: limit.percentRemaining, resetText: limit.resetText,
+                                           precisePercentRemaining: limit.precisePercent.map { _ in limit.precisePercentRemaining })
         } else {
             shortLimit = nil
         }
         let weeklyLimit: QuotaLimitSnapshot?
         if hasRecentData, let limit = service.weeklyLimit {
-            weeklyLimit = QuotaLimitSnapshot(percentRemaining: limit.percentRemaining, resetText: limit.resetText)
+            weeklyLimit = QuotaLimitSnapshot(percentRemaining: limit.percentRemaining, resetText: limit.resetText,
+                                           precisePercentRemaining: limit.precisePercent.map { _ in limit.precisePercentRemaining })
         } else {
             weeklyLimit = nil
         }
@@ -203,6 +202,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return .codex
         case .claude:
             return .claude
+        case .cursor:
+            return .cursor
         }
     }
 
@@ -237,7 +238,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let snapshot = QuotaStatusSnapshot(
             selectedUsageSource: settingsStore.selectedUsageSource,
             codexService: codexUsageService,
-            claudeService: claudeUsageService
+            claudeService: claudeUsageService,
+            cursorService: cursorUsageService
         )
 
         do {
@@ -259,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem.button else { return }
         codexUsageService.pollCurrentPage()
         claudeUsageService.pollCurrentPage()
+        cursorUsageService.pollCurrentPage()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         eventMonitor?.start()
     }
@@ -301,15 +304,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    private func showCursorLoginWindow() {
+        if cursorLoginWindowController == nil {
+            cursorUsageService.beginInteractiveSession()
+            cursorLoginWindowController = LoginWindowController(
+                webView: cursorUsageService.webView,
+                url: cursorUsageService.usageURL,
+                title: cursorUsageService.loginWindowTitle,
+                onClose: { [weak self] in
+                    guard let self else { return }
+                    self.cursorLoginWindowController = nil
+                    self.cursorUsageService.endInteractiveSession()
+                    if !self.isLoggingOut { self.cursorUsageService.refresh(force: true) }
+                }
+            )
+        }
+        cursorLoginWindowController?.showWindow(nil)
+        cursorLoginWindowController?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     private func logoutAllAccounts() {
         guard !isLoggingOut else { return }
         isLoggingOut = true
 
         codexUsageService.resetForLogout()
         claudeUsageService.resetForLogout()
+        cursorUsageService.resetForLogout()
 
         claudeLoginWindowController?.close()
         claudeLoginWindowController = nil
+        cursorLoginWindowController?.close()
+        cursorLoginWindowController = nil
 
         WebViewFactory.clearWebsiteData { [weak self] in
             DispatchQueue.main.async {
@@ -317,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.isLoggingOut = false
                 self.codexUsageService.refresh(force: true)
                 self.claudeUsageService.refresh(force: true)
+                self.cursorUsageService.refresh(force: true)
             }
         }
     }

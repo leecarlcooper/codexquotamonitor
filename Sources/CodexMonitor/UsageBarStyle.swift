@@ -18,6 +18,8 @@ enum UsageBarStyle {
             switch palette {
             case .codex:
                 return greenColor
+            case .cursor:
+                return NSColor.systemPurple
             case .claude:
                 return claudeBlue
             }
@@ -35,6 +37,8 @@ enum UsageBarStyle {
             switch palette {
             case .codex:
                 return Color(greenColor)
+            case .cursor:
+                return Color(NSColor.systemPurple)
             case .claude:
                 return Color(claudeBlue)
             }
@@ -45,4 +49,5 @@ enum UsageBarStyle {
 enum UsageBarPalette {
     case codex
     case claude
+    case cursor
 }

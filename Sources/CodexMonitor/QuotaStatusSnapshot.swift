@@ -7,22 +7,43 @@ struct QuotaStatusSnapshot: Codable {
     let selectedUsageSource: String
     let codex: ProductStatus
     let claude: ProductStatus
+    let cursor: CursorStatus?
 
     init(
         generatedAt: Date = Date(),
         selectedUsageSource: UsageSource,
         codexService: UsageService,
-        claudeService: UsageService
+        claudeService: UsageService,
+        cursorService: UsageService? = nil
     ) {
         self.schemaVersion = 1
         self.generatedAt = generatedAt
         self.selectedUsageSource = selectedUsageSource.rawValue
         self.codex = ProductStatus(service: codexService)
         self.claude = ProductStatus(service: claudeService)
+        self.cursor = cursorService.map(CursorStatus.init(service:))
     }
 }
 
 extension QuotaStatusSnapshot {
+    struct CursorStatus: Codable {
+        let productName: String
+        let authState: String
+        let cursorModels: LimitStatus?
+        let otherModels: LimitStatus?
+        let lastUpdated: Date?
+        let errorMessage: String?
+
+        init(service: UsageService) {
+            productName = "Cursor"
+            authState = service.authState.statusValue
+            cursorModels = service.fiveHourLimit.map(LimitStatus.init(limit:))
+            otherModels = service.weeklyLimit.map(LimitStatus.init(limit:))
+            lastUpdated = service.lastUpdated
+            errorMessage = service.errorMessage
+        }
+    }
+
     struct ProductStatus: Codable {
         let productName: String
         let authState: String
@@ -49,8 +70,10 @@ extension QuotaStatusSnapshot {
         let percentRemaining: Int
         let resetText: String
         let resetAt: String?
+        let precisePercentRemaining: Double?
 
         init(limit: UsageLimit) {
+            self.precisePercentRemaining = limit.precisePercent.map { _ in limit.precisePercentRemaining }
             self.percent = limit.percent
             self.metric = limit.metric
             self.percentRemaining = limit.percentRemaining

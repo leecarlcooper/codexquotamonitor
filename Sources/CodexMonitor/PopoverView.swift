@@ -5,9 +5,11 @@ import Foundation
 struct PopoverView: View {
     @ObservedObject var usageService: UsageService
     @ObservedObject var claudeUsageService: UsageService
+    @ObservedObject var cursorUsageService: UsageService
     @ObservedObject var settings: SettingsStore
     let onSignIn: () -> Void
     let onClaudeSignIn: () -> Void
+    let onCursorSignIn: () -> Void
     let onRefresh: () -> Void
     let onLogout: () -> Void
 
@@ -21,10 +23,14 @@ struct PopoverView: View {
                 )
 
             VStack(alignment: .leading, spacing: 16) {
-                header
-                    .layoutPriority(1)
-                content
-                claudeSection
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        header
+                        content
+                        claudeSection
+                        cursorSection
+                    }
+                }
                 settingsSeparator
                 settingsSection
                 footer
@@ -33,7 +39,7 @@ struct PopoverView: View {
             .padding(.top, 6)
             .padding(.bottom, 10)
         }
-        .frame(width: 340, height: 700)
+        .frame(width: 380, height: 700)
     }
 
     private var header: some View {
@@ -85,6 +91,30 @@ struct PopoverView: View {
         }
     }
 
+    private var cursorSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                selectionButton(for: .cursor)
+                Text("Cursor")
+                    .font(.system(size: 15, weight: .semibold))
+                    .contentShape(Rectangle())
+                    .onTapGesture { NSWorkspace.shared.open(cursorUsageService.usageURL) }
+            }
+            usageContent(
+                for: cursorUsageService,
+                signInLabel: "Open Cursor Sign In",
+                signInAction: onCursorSignIn,
+                titles: ("Cursor Models", "Other Models"),
+                palette: .cursor
+            )
+            if let error = cursorUsageService.errorMessage {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
     @ViewBuilder
     private func usageContent(
         for service: UsageService,
@@ -120,7 +150,7 @@ struct PopoverView: View {
                 .buttonStyle(.plain)
             }
         } else {
-            VStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
                 UsageCard(
                     title: titles.0,
                     limit: service.fiveHourLimit,
@@ -196,8 +226,7 @@ private struct UsageCard: View {
     }
 
     private var percentText: String {
-        guard let percent = limit?.percentRemaining else { return "--%" }
-        return "\(percent)%"
+        limit?.remainingDisplayText ?? "--%"
     }
 
     private var metricText: String {
@@ -209,7 +238,8 @@ private struct UsageCard: View {
         guard let countdown = ResetCountdownFormatter.countdown(
             from: limit.resetText,
             now: now,
-            referenceDate: referenceDate
+            referenceDate: referenceDate,
+            daysAndHoursOnly: palette == .cursor
         ) else {
             return "Reset time unavailable"
         }
@@ -241,6 +271,7 @@ private struct UsageCard: View {
                 .foregroundColor(.secondary)
         }
         .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.black.opacity(0.12))
         .cornerRadius(12)
     }
@@ -280,6 +311,6 @@ private extension PopoverView {
                 .foregroundColor(.secondary)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(source == .codex ? "Show Codex in menu bar" : "Show Claude in menu bar")
+        .accessibilityLabel("Show \(source.rawValue.capitalized) in menu bar")
     }
 }

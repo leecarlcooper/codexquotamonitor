@@ -5,17 +5,18 @@ enum ResetCountdownFormatter {
         from resetText: String,
         now: Date = Date(),
         referenceDate: Date? = nil,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        daysAndHoursOnly: Bool = false
     ) -> String? {
         let trimmed = resetText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         if let date = ISO8601DateFormatter().date(from: trimmed) {
-            return format(interval: date.timeIntervalSince(now))
+            return format(interval: date.timeIntervalSince(now), daysAndHoursOnly: daysAndHoursOnly)
         }
         let normalized = normalize(trimmed)
         if let interval = parseInterval(from: normalized, now: now, referenceDate: referenceDate, calendar: calendar) {
-            return format(interval: interval)
+            return format(interval: interval, daysAndHoursOnly: daysAndHoursOnly)
         }
         return nil
     }
@@ -254,7 +255,12 @@ enum ResetCountdownFormatter {
         return DateComponents(hour: hour, minute: minute)
     }
 
-    private static func format(interval: TimeInterval) -> String {
+    private static func format(interval: TimeInterval, daysAndHoursOnly: Bool) -> String {
+        if daysAndHoursOnly {
+            let hours = max(0, Int(interval / 3600))
+            if interval > 0 && hours == 0 { return "<1h" }
+            return "\(hours / 24)d \(hours % 24)h"
+        }
         let totalSeconds = max(0, Int(interval.rounded(.up)))
         let totalMinutes = max(1, totalSeconds / 60)
         let days = totalMinutes / (24 * 60)

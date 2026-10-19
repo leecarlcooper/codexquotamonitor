@@ -7,6 +7,17 @@ struct UsageLimit: Codable {
     let metric: UsageMetric
     let resetText: String
 
+    var precisePercent: Double? = nil
+
+    var precisePercentRemaining: Double {
+        let value = max(0, min(100, precisePercent ?? Double(percent)))
+        return metric == .used ? 100 - value : value
+    }
+
+    var remainingDisplayText: String {
+        precisePercentRemaining.formatted(.number.precision(.fractionLength(0...1))) + "%"
+    }
+
     var percentRemaining: Int {
         metric.remainingPercent(from: percent)
     }
@@ -37,7 +48,13 @@ final class UsageService: NSObject, ObservableObject {
     var usageURL: URL { configuration.usageURL }
     var loginWindowTitle: String { configuration.loginWindowTitle }
 
+    var usesCursorAccount: Bool { configuration.productName == "Cursor" }
+
     var statusSummary: String {
+        if usesCursorAccount {
+            if authState == .needsLogin { return "Cursor usage (sign in required)" }
+            return "Cursor usage (Cursor Models: \(fiveHourLimit?.remainingDisplayText ?? "--") remaining, Other Models: \(weeklyLimit?.remainingDisplayText ?? "--") remaining)"
+        }
         if authState == .needsLogin {
             return "\(configuration.productName) usage (sign in required)"
         }
@@ -182,10 +199,10 @@ final class UsageService: NSObject, ObservableObject {
             if payload.hasUsage {
                 authState = .authenticated
                 fiveHourLimit = payload.fiveHour.map { limit in
-                    UsageLimit(percent: limit.percent, metric: limit.metric ?? configuration.defaultMetric, resetText: limit.resetText)
+                    UsageLimit(percent: limit.percent, metric: limit.metric ?? configuration.defaultMetric, resetText: limit.resetText, precisePercent: limit.precisePercent)
                 }
                 weeklyLimit = payload.weekly.map { limit in
-                    UsageLimit(percent: limit.percent, metric: limit.metric ?? configuration.defaultMetric, resetText: limit.resetText)
+                    UsageLimit(percent: limit.percent, metric: limit.metric ?? configuration.defaultMetric, resetText: limit.resetText, precisePercent: limit.precisePercent)
                 }
                 lastUpdated = Date()
                 errorMessage = nil
@@ -231,6 +248,10 @@ final class UsageService: NSObject, ObservableObject {
     private func attemptParse() {
         guard !usesCodexAccount else { return }
         let currentGeneration = generation
+        if usesCursorAccount {
+            attemptCursorParse(generation: currentGeneration)
+            return
+        }
         webView.evaluateJavaScript(Self.parserScript) { [weak self] result, error in
             guard self?.generation == currentGeneration else { return }
             if let error {
@@ -239,6 +260,34 @@ final class UsageService: NSObject, ObservableObject {
                 return
             }
             self?.handleParseResult(result)
+        }
+    }
+
+    private func attemptCursorParse(generation currentGeneration: Int) {
+        webView.callAsyncJavaScript(CursorUsageParser.fetchScript, arguments: [:], in: nil, in: .page) { [weak self] result in
+            guard let self, self.generation == currentGeneration else { return }
+            if case .success(let value) = result,
+               let json = value as? String,
+               let data = json.data(using: .utf8),
+               let limits = try? CursorUsageParser.parseSummary(data) {
+                self.fiveHourLimit = limits.cursorModels
+                self.weeklyLimit = limits.otherModels
+                self.authState = .authenticated
+                self.lastUpdated = Date()
+                self.errorMessage = nil
+                self.missingCount = 0
+                self.isLoading = false
+                return
+            }
+            self.webView.evaluateJavaScript(CursorUsageParser.dashboardScript) { [weak self] value, error in
+                guard let self, self.generation == currentGeneration else { return }
+                if let error {
+                    self.recordTransientError(error.localizedDescription)
+                    self.isLoading = false
+                } else {
+                    self.handleParseResult(value)
+                }
+            }
         }
     }
 
@@ -278,6 +327,7 @@ private struct ParsedUsageLimit: Codable {
     let percent: Int
     let metric: UsageMetric?
     let resetText: String
+    let precisePercent: Double?
 }
 
 private extension UsageService {
@@ -536,6 +586,15 @@ extension UsageService.Configuration {
         productName: "Claude",
         usageURL: URL(string: "https://claude.ai/settings/usage")!,
         loginWindowTitle: "Sign in to Claude",
+        defaultMetric: .used
+    )
+}
+
+extension UsageService.Configuration {
+    static let cursor = UsageService.Configuration(
+        productName: "Cursor",
+        usageURL: URL(string: "https://cursor.com/dashboard/usage")!,
+        loginWindowTitle: "Sign in to Cursor",
         defaultMetric: .used
     )
 }

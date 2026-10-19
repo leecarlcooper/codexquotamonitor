@@ -99,6 +99,7 @@ struct QuotaWidgetSnapshot: Codable, Equatable {
     let codex: QuotaProductSnapshot
     let claude: QuotaProductSnapshot
     let selectedProduct: QuotaProduct
+    var cursor: QuotaProductSnapshot? = nil
     let savedAt: Date
 
     /// How long previously saved values may be re-used while a refresh is failing.
@@ -109,7 +110,7 @@ struct QuotaWidgetSnapshot: Codable, Equatable {
     static let staleAfter: TimeInterval = 15 * 60
 
     var latestUpdatedAt: Date? {
-        [codex.lastUpdated, claude.lastUpdated].compactMap { $0 }.max()
+        [codex.lastUpdated, claude.lastUpdated, cursor?.lastUpdated].compactMap { $0 }.max()
     }
 
     static let placeholder = QuotaWidgetSnapshot(
@@ -166,12 +167,19 @@ struct QuotaWidgetSnapshot: Codable, Equatable {
         guard let previous else { return self }
         let nextCodex = codex.preservingLastKnownValues(from: previous.codex, now: now)
         let nextClaude = claude.preservingLastKnownValues(from: previous.claude, now: now)
-        let didPreserveEverything = nextCodex == previous.codex && nextClaude == previous.claude
+        let nextCursor: QuotaProductSnapshot?
+        if let cursor, let previousCursor = previous.cursor {
+            nextCursor = cursor.preservingLastKnownValues(from: previousCursor, now: now)
+        } else {
+            nextCursor = cursor
+        }
+        let didPreserveEverything = nextCodex == previous.codex && nextClaude == previous.claude && nextCursor == previous.cursor
 
         return QuotaWidgetSnapshot(
             codex: nextCodex,
             claude: nextClaude,
             selectedProduct: selectedProduct,
+            cursor: nextCursor,
             savedAt: didPreserveEverything ? previous.savedAt : savedAt
         )
     }
@@ -186,6 +194,12 @@ struct QuotaProductSnapshot: Codable, Equatable {
     let authState: QuotaAuthState
     let errorMessage: String?
     let lastUpdated: Date?
+
+    static let emptyCursor = QuotaProductSnapshot(
+        product: .cursor, shortTitle: "Cursor Models", weeklyTitle: "Other Models",
+        shortLimit: nil, weeklyLimit: nil, authState: .unknown,
+        errorMessage: "Waiting for update", lastUpdated: nil
+    )
 
     func isStale(at date: Date) -> Bool {
         guard let lastUpdated else { return false }
@@ -217,11 +231,13 @@ struct QuotaProductSnapshot: Codable, Equatable {
 struct QuotaLimitSnapshot: Codable, Equatable {
     let percentRemaining: Int
     let resetText: String
+    var precisePercentRemaining: Double? = nil
 }
 
 enum QuotaProduct: String, Codable, Equatable {
     case codex
     case claude
+    case cursor
 }
 
 enum QuotaAuthState: String, Codable, Equatable {

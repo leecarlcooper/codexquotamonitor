@@ -20,13 +20,13 @@
 
 ## Testing Guidelines
 - Run the XCTest target in `Tests/CodexMonitorTests/` with `swift test`.
-- Cover Codex protocol/response handling in `CodexRateLimitsClient.swift` and the Claude usage-page parser in `UsageService.swift`.
+- Cover Codex protocol/response handling in `CodexRateLimitsClient.swift` and the Claude usage-page parser in `UsageService.swift`, and Cursor bucket/reset parsing in `CursorUsageParser.swift`.
 
 ## Commit & Pull Request Guidelines
 - Commit messages are short, imperative, and single-line (e.g., “Update usage UI and refresh docs”).
 - PRs should include: a brief description of what/why, testing notes (or “Not tested”), and screenshots for UI changes. Link issues if applicable.
 
 ## Configuration & Maintenance Notes
-- Codex uses `codex app-server` and `account/rateLimits/read` with the existing CLI ChatGPT account. Claude still uses the WebKit DOM parser in `UsageService.swift`.
+- Codex uses `codex app-server` and `account/rateLimits/read` with the existing CLI ChatGPT account. Claude still uses the WebKit DOM parser in `UsageService.swift`. Cursor uses the session-authenticated `/api/usage-summary` endpoint with a dashboard DOM fallback in `CursorUsageParser.swift`; track only Cursor Models and Other Models over the current billing cycle.
 - Minimum deployment target is macOS 13 (set in `Package.swift`).
 - Avoid committing credentials or session data; Codex owns its CLI authentication and Claude uses WebKit’s data store. Preserve the local `quota-status.json` export for companion apps.

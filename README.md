@@ -1,6 +1,6 @@
 # CodexMonitor (macOS menu bar)
 
-A macOS menu bar app showing remaining Codex and Claude five-hour/session and weekly limits, with reset countdowns and a desktop widget.
+A macOS menu bar app showing remaining Codex and Claude limits plus Cursor’s monthly Cursor Models and Other Models buckets, with reset countdowns and a desktop widget.
 
 ## Requirements
 
@@ -25,6 +25,12 @@ The bundle build includes the desktop widget. If XcodeGen is installed, the buil
 
 **Claude:** Click Open Claude Sign In and authenticate in the embedded browser. Cookies remain in the app's WebKit data store. Claude usage is still read from `https://claude.ai/settings/usage`.
 
+**Cursor:** Click Open Cursor Sign In and authenticate in the embedded browser. The monitor requests `https://cursor.com/api/usage-summary` in that authenticated WebKit session. `individualUsage.plan.autoPercentUsed` supplies Cursor Models usage, `apiPercentUsed` supplies Other Models usage, and `billingCycleEnd` supplies the shared reset timestamp. Percentages are converted from used to remaining and shown with up to one decimal place. The app follows the current billing cycle automatically; daily usage-event filters do not affect it.
+
+This is an internal dashboard endpoint, not a supported public personal-quota API. If it changes, the monitor falls back to the two aggregate rows in the dashboard’s Included Usage section. The fallback uses the displayed cycle-end date at local midnight because the page does not specify an hour; only the API gives an exact reset time. Missing buckets stay unavailable. Cursor cookies remain in WebKit, with no API key setup or browser-cookie extraction. Cursor’s documented [Admin API](https://cursor.com/docs/account/teams/admin-api) is intended for team administration.
+
+Select Cursor’s circle to show its two buckets in the menu bar. Its reset countdowns use days and hours (`15d 6h`, or `<1h`). Each provider’s two usage cards sit side by side so all three providers fit in the popover. The small widget follows the selection, the medium widget shows Codex and either Claude or the selected Cursor provider, and the large widget shows all three.
+
 **Disconnect** pauses Codex monitoring persistently and clears the monitor's browser sessions. It does not sign the Codex CLI or desktop app out. Click Connect Codex to resume monitoring.
 
 ## Reliability and troubleshooting
@@ -40,7 +46,7 @@ The bundle build includes the desktop widget. If XcodeGen is installed, the buil
 
 ## Local integrations
 
-The app preserves the MiniToo-compatible snapshot at `~/Library/Application Support/CodexMonitor/quota-status.json`. It contains remaining percentages, reset text, an additive ISO-8601 `resetAt` field for Codex limits, authentication state, last successful update, and any error. Consumers should check the timestamp and error before displaying data as current.
+The app preserves the MiniToo-compatible snapshot at `~/Library/Application Support/CodexMonitor/quota-status.json`. Existing Codex and Claude fields are preserved. An additive `cursor` object exports `cursorModels` and `otherModels` limits, including decimal `precisePercentRemaining` values. It contains remaining percentages, reset text, an additive ISO-8601 `resetAt` field for Codex limits, authentication state, last successful update, and any error. Consumers should check the timestamp and error before displaying data as current.
 
 ```bash
 /Applications/CodexMonitor.app/Contents/MacOS/CodexMonitor --quota-status
@@ -51,4 +57,4 @@ These commands read the saved snapshot; they do not fetch fresh usage. Widget sn
 
 ## Development
 
-`CodexRateLimitsClient.swift` owns Codex process/protocol handling and response decoding. `UsageService.swift` owns polling state and the Claude DOM parser. `swift test` covers bucket/window selection, percentages, timestamps, fragmented protocol responses, unavailable executables, timeouts, early process exit, companion export compatibility, and widget error preservation.
+`CodexRateLimitsClient.swift` owns Codex process/protocol handling and response decoding. `UsageService.swift` owns polling state and the Claude DOM parser. `CursorUsageParser.swift` handles Cursor’s summary response and dashboard fallback. `swift test` covers bucket/window selection, percentages, timestamps, fragmented protocol responses, unavailable executables, timeouts, early process exit, companion export compatibility, widget error preservation, Cursor bucket selection, decimal percentages, missing data, dashboard fallback, and billing-cycle countdowns.

@@ -86,6 +86,8 @@ private struct QuotaWidgetView: View {
             return entry.snapshot.codex
         case .claude:
             return entry.snapshot.claude
+        case .cursor:
+            return entry.snapshot.cursor ?? .emptyCursor
         }
     }
 }
@@ -99,7 +101,10 @@ private struct MediumQuotaWidget: View {
         VStack(alignment: .leading, spacing: 9) {
             ProductQuotaRow(product: snapshot.codex, date: date, isFullColor: isFullColor)
             Divider().overlay(Color.white.opacity(isFullColor ? 0.10 : 0.16))
-            ProductQuotaRow(product: snapshot.claude, date: date, isFullColor: isFullColor)
+            ProductQuotaRow(
+                product: snapshot.selectedProduct == .cursor ? (snapshot.cursor ?? .emptyCursor) : snapshot.claude,
+                date: date, isFullColor: isFullColor
+            )
 
             HStack {
                 Spacer()
@@ -167,6 +172,9 @@ private struct LargeQuotaWidget: View {
             VStack(alignment: .leading, spacing: 12) {
                 ProductQuotaRow(product: snapshot.codex, date: date, isFullColor: isFullColor)
                 ProductQuotaRow(product: snapshot.claude, date: date, isFullColor: isFullColor)
+                if let cursor = snapshot.cursor {
+                    ProductQuotaRow(product: cursor, date: date, isFullColor: isFullColor)
+                }
             }
 
             Spacer(minLength: 0)
@@ -293,8 +301,9 @@ private struct QuotaMetricView: View {
     }
 
     private var percentText: String {
-        guard let percent = limit?.percentRemaining else { return "--%" }
-        return "\(percent)%"
+        guard let limit else { return "--%" }
+        return (limit.precisePercentRemaining ?? Double(limit.percentRemaining))
+            .formatted(.number.precision(.fractionLength(0...1))) + "%"
     }
 
     private var detailText: String {
@@ -305,7 +314,8 @@ private struct QuotaMetricView: View {
         guard let countdown = ResetCountdownFormatter.countdown(
             from: limit.resetText,
             now: date,
-            referenceDate: referenceDate
+            referenceDate: referenceDate,
+            daysAndHoursOnly: palette == .cursor
         ) else {
             return "Reset time unavailable"
         }
@@ -421,6 +431,8 @@ private extension QuotaProductSnapshot {
             return .codex
         case .claude:
             return .claude
+        case .cursor:
+            return .cursor
         }
     }
 }
@@ -432,6 +444,8 @@ private extension QuotaProduct {
             return "Codex"
         case .claude:
             return "Claude"
+        case .cursor:
+            return "Cursor"
         }
     }
 
@@ -441,6 +455,8 @@ private extension QuotaProduct {
             return "chevron.left.forwardslash.chevron.right"
         case .claude:
             return "sparkles"
+        case .cursor:
+            return "cursorarrow"
         }
     }
 
@@ -450,6 +466,8 @@ private extension QuotaProduct {
             return Color(red: 0.18, green: 0.62, blue: 0.95)
         case .claude:
             return Color(red: 0.84, green: 0.47, blue: 0.22)
+        case .cursor:
+            return Color(NSColor.systemPurple)
         }
     }
 }
